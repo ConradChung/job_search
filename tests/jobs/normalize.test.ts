@@ -122,3 +122,19 @@ describe('planSync', () => {
     expect(toUpdate.map((r) => r.company)).toEqual(['A'])
   })
 })
+
+import { accessKeyMatches } from '@/lib/auth/accessKey'
+
+describe('accessKeyMatches', () => {
+  const key = 'a'.repeat(40)
+  it('matches only the exact key', () => {
+    expect(accessKeyMatches(key, key)).toBe(true)
+    expect(accessKeyMatches(key + 'x', key)).toBe(false)
+    expect(accessKeyMatches(key.slice(1), key)).toBe(false)
+    expect(accessKeyMatches('', key)).toBe(false)
+  })
+  it('fails closed when the key is unset or too short', () => {
+    expect(accessKeyMatches('short', 'short')).toBe(false)
+    expect(accessKeyMatches('x', undefined)).toBe(false)
+  })
+})

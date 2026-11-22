@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { isOwner } from '@/lib/auth/isOwner'
+import { ACCESS_COOKIE, accessKeyMatches } from '@/lib/auth/accessKey'
 
 /**
  * Single-owner gate (same model as Lume). Public: /login, /auth/*, the
@@ -8,10 +9,19 @@ import { isOwner } from '@/lib/auth/isOwner'
  */
 const PUBLIC = ['/login', '/api/auth/magic-link']
 
+/** The private link route sets its own cookie; it checks the key itself. */
+const isPrivateLink = (p: string) => p.startsWith('/k/')
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isAuthPage = PUBLIC.includes(pathname) || pathname.startsWith('/auth/')
   const isApi = pathname.startsWith('/api/')
+
+  if (isPrivateLink(pathname)) return NextResponse.next({ request })
+  // Private-link cookie: let the browser in without a Supabase session.
+  if (!isAuthPage && accessKeyMatches(request.cookies.get(ACCESS_COOKIE)?.value)) {
+    return NextResponse.next({ request })
+  }
 
   const { response, user } = await updateSession(request)
   const owner = isOwner(user?.email, process.env.ALLOWED_EMAIL)
