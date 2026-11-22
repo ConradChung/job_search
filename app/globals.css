@@ -1,0 +1,777 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+@custom-variant light (&:is(.light *));
+
+/* ------------------------------------------------------------------ */
+/* Tokens → Tailwind                                                   */
+/* Two themes (dark "gamer", light "nature") over <AppBackground />.    */
+/* Surfaces use the glass recipe (--glass-fill/-border/-highlight).     */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  /* shadcn semantic palette */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Brand */
+  --color-black: var(--black);
+  --color-white: var(--white);
+  --color-violet: var(--violet);
+  --color-brand: var(--violet);
+  --color-lime: var(--lime);
+  --color-forest: var(--forest);
+  --color-olive: var(--olive);
+  --color-link: var(--link);
+  --color-positive: var(--positive);
+
+  /* Legacy Lume names, remapped onto the four-colour palette so pages that
+     still use them stay on-brand until they are restyled:
+       green → lime (positive/live) · amber → violet (needs you)
+       cyan → white/70 (neutral)    · red → destructive */
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-violet-soft: var(--violet-soft);
+  --color-green: var(--green);
+  --color-amber: var(--amber);
+  --color-red: var(--red);
+  --color-cyan: var(--cyan);
+
+  /* Text: white at 100 / 70 / 55 / 25 % */
+  --color-fg: var(--fg);
+  --color-fg-70: var(--fg-70);
+  --color-fg-46: var(--fg-46);
+  --color-fg-24: var(--fg-24);
+
+  /* Type */
+  --font-sans: var(--font-geist-sans), "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+  --font-heading: var(--font-sans);
+
+  /* Radius: one scale from --radius (0.5rem) */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-control: var(--radius);
+  /* Panels match the glass cards (rounded-xl / rounded-2xl). */
+  --radius-panel: calc(var(--radius) * 1.5);
+  --radius-panel-lg: calc(var(--radius) * 2);
+
+  /* Motion */
+  --ease-glass: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-feed-in: feed-in 0.45s var(--ease-glass) both;
+  --animate-rise: rise 0.25s var(--ease-glass) both;
+  /* `anim-shimmer`, not `shimmer`: shadcn/tailwind.css owns a text-clip `shimmer` utility. */
+  --animate-anim-shimmer: bar-shimmer 1.3s linear infinite;
+}
+
+/* ------------------------------------------------------------------ */
+/* Raw tokens, per theme (next-themes puts `dark` / `light` on <html>). */
+/* Components only reference tokens. Dark is the default.              */
+/* ------------------------------------------------------------------ */
+:root,
+:root.dark {
+  color-scheme: dark;
+
+  /* Brand */
+  --black: #000000;
+  --white: #ffffff;
+  /* `--violet` is a legacy NAME: the palette is black / white / lime (+ red)
+     only, so the old automation/agent/"needs you" accent is now a neutral —
+     near-white in dark, ink in light. Every `*-violet*` class follows it. */
+  --violet: #e8e8e8;
+  --lime: #ff6a1a; /* neon orange (owner, 2026-11-22); token name kept from Lume */
+  --forest: #1f6b3a; /* fallback only; no longer a visible primary */
+  /* Olive: lime's text-safe partner on light surfaces (5.7:1 on glass). */
+  --olive: #a83a00; /* text-safe orange on light glass */
+  /* Text-safe "positive" colour: lime on dark, olive on light. */
+  --positive: var(--lime);
+  /* Inline links: lime on dark; ink + lime underline on light (.link-accent). */
+  --link: var(--lime);
+  /* Thin dark edge for lime fills / focus on light; none on dark. */
+  --lime-edge: transparent;
+
+  /* Glass recipe */
+  /* Glass is tinted near-black so text stays readable over the bright gradient (owner, 2026-11-09). */
+  --glass-fill: rgba(0, 0, 0, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 0 #0000;
+  /* Overlays (popovers, dialogs, sheets) sit over content, not the
+     background, so they use a denser fill of the same recipe. */
+  --glass-fill-strong: rgba(6, 6, 6, 0.9);
+  --primary-glow: 0 0 24px -6px var(--lime);
+  /* Floating tab bar */
+  --bar-fill: rgba(0, 0, 0, 0.6);
+  --bar-shadow: inset 0 1px 0 0 var(--glass-highlight), 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+  --dot-glow: 0 0 8px currentColor;
+
+  /* Charts */
+  --chart-line: var(--lime);
+  --chart-area: var(--lime);
+  --chart-point: var(--lime);
+  --chart-glow: drop-shadow(0 0 6px currentColor);
+
+  /* Neutrals: white at alpha */
+  --fg: #ffffff;
+  /* Raised for readability (owner, 2026-11-09). */
+  --fg-70: rgba(255, 255, 255, 0.82);
+  --fg-46: rgba(255, 255, 255, 0.66); /* muted */
+  --fg-24: rgba(255, 255, 255, 0.42); /* faint */
+  --fg-35: rgba(255, 255, 255, 0.42); /* disabled / idle */
+  --line: rgba(255, 255, 255, 0.13);
+
+  /* Legacy names → palette */
+  --bg: #050505;
+  --panel: rgba(8, 8, 8, 0.82);
+  --surface: rgba(6, 6, 6, 0.9); /* sticky headers: dense + blurred so rows hide */
+  --violet-soft: rgba(255, 255, 255, 0.82);
+  --green: var(--lime);
+  --amber: var(--violet);
+  --cyan: rgba(255, 255, 255, 0.7);
+  --red: var(--destructive);
+
+  --radius: 0.5rem;
+  --topbar-h: 60px; /* corner controls: 16 px offset + 44 px square */
+
+  /* shadcn semantic */
+  --background: #050505;
+  --foreground: #ffffff;
+  --card: var(--glass-fill);
+  --card-foreground: #ffffff;
+  --popover: var(--glass-fill-strong);
+  --popover-foreground: #ffffff;
+  --primary: var(--lime);
+  --primary-foreground: #000000;
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.05);
+  --muted-foreground: rgba(255, 255, 255, 0.66);
+  --accent: color-mix(in oklab, var(--lime) 12%, transparent);
+  --accent-foreground: #ffffff;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: rgba(255, 255, 255, 0.13);
+  --input: rgba(255, 255, 255, 0.18);
+  --ring: var(--lime);
+  --chart-1: var(--lime);
+  --chart-2: rgba(255, 255, 255, 0.6);
+  --chart-3: #ffffff;
+  --chart-4: rgba(255, 255, 255, 0.4);
+  --chart-5: var(--destructive);
+  --sidebar: #050505;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: var(--lime);
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: rgba(255, 255, 255, 0.05);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+/* Light — "green tech / nature". Primary is still lime, but only as a FILL
+   with ink text (15:1) and a thin olive edge. Lime never carries text here:
+   links are ink with a lime underline, positive text is olive, chart lines
+   are a deeper lime (#5C8000) with lime area + points. `--white` is
+   remapped to ink so legacy `*-white/NN` neutrals (hairlines, hover tints,
+   faint text) invert instead of vanishing. */
+:root.light {
+  color-scheme: light;
+
+  --ink: #0f1a12;
+  --white: #0f1a12;
+  --violet: #0f1a12;
+  --positive: var(--olive);
+  --link: #0f1a12;
+  /* Light-grey edge on lime fills (never black). */
+  --lime-edge: rgba(15, 26, 18, 0.12);
+
+  --glass-fill: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 8px 30px -12px rgba(20, 40, 20, 0.25);
+  --glass-fill-strong: rgba(255, 255, 255, 0.86);
+  --primary-glow: 0 0 #0000;
+  --bar-fill: rgba(255, 255, 255, 0.55);
+  --bar-shadow: inset 0 1px 0 0 var(--glass-highlight), 0 10px 30px -12px rgba(20, 40, 20, 0.3);
+  --dot-glow: 0 0 #0000;
+
+  --chart-line: #c2410c; /* 4.2:1 on glass */
+  --chart-area: var(--lime);
+  --chart-point: var(--lime);
+  --chart-glow: none;
+
+  --fg: #0f1a12;
+  --fg-70: rgba(15, 26, 18, 0.8);
+  --fg-46: rgba(15, 26, 18, 0.68);
+  --fg-24: rgba(15, 26, 18, 0.5);
+  --fg-35: rgba(15, 26, 18, 0.35);
+  --line: rgba(15, 26, 18, 0.14);
+
+  --bg: #f3f6f0;
+  --panel: rgba(255, 255, 255, 0.78);
+  --surface: rgba(240, 244, 236, 0.88);
+  --violet-soft: #0f1a12;
+  --green: var(--olive);
+  --amber: #0f1a12;
+  --cyan: rgba(15, 26, 18, 0.72);
+
+  --background: #f3f6f0;
+  --foreground: #0f1a12;
+  --card-foreground: #0f1a12;
+  --popover-foreground: #0f1a12;
+  --primary: var(--lime);
+  --primary-foreground: #0f1a12;
+  --secondary: rgba(15, 26, 18, 0.06);
+  --secondary-foreground: #0f1a12;
+  --muted: rgba(15, 26, 18, 0.05);
+  /* Brief: ink/55. Measured 4.2:1 on the glass → raised to /60 for AA. */
+  --muted-foreground: rgba(15, 26, 18, 0.68);
+  --accent: color-mix(in oklab, var(--lime) 22%, transparent);
+  --accent-foreground: #0f1a12;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(15, 26, 18, 0.14);
+  --input: rgba(15, 26, 18, 0.12);
+  /* Slightly deeper lime so the keyboard ring reads on white glass. */
+  --ring: #a8e01a;
+  --chart-1: #5c8000;
+  --chart-2: rgba(15, 26, 18, 0.55);
+  --chart-3: #0f1a12;
+  --chart-4: rgba(15, 26, 18, 0.4);
+  --sidebar: #f3f6f0;
+  --sidebar-foreground: #0f1a12;
+  --sidebar-primary: var(--lime);
+  --sidebar-primary-foreground: #0f1a12;
+  --sidebar-accent: rgba(15, 26, 18, 0.05);
+  --sidebar-accent-foreground: #0f1a12;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    background-color: var(--background);
+  }
+  /* The canvas colour lives on <html>; <body> stays transparent so the
+     fixed -z-10 <AppBackground /> paints above it (a body background would
+     paint over negative-z children). */
+  body {
+    @apply text-foreground;
+    background: transparent;
+    min-height: 100dvh;
+    font-size: 14px;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 35%, transparent);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Recipes                                                             */
+/* ------------------------------------------------------------------ */
+@layer components {
+  /* Glass recipe: blur + translucent fill + 1px translucent border + 1px
+     inner top highlight (+ a soft drop shadow in light). `.liquid-glass` /
+     `.surface-card` / `.surface` are older names for the same surface. */
+  .glass,
+  .liquid-glass,
+  .surface-card,
+  .surface {
+    background: var(--glass-fill);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 0 var(--glass-highlight), var(--glass-shadow);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+  }
+  /* Same recipe, denser fill, for overlays floating over content. */
+  .glass-overlay {
+    background: var(--glass-fill-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 0 var(--glass-highlight), 0 16px 40px -16px rgba(0, 0, 0, 0.45);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+  }
+
+  /* Page scaffold */
+  /* Full-width page: fluid with side padding, capped only on ultra-wide. */
+  .shell {
+    width: 100%;
+    max-width: 1920px;
+    margin: 0 auto;
+    padding: calc(var(--topbar-h) + 1.25rem) 2.5rem 2rem;
+  }
+  @media (max-width: 1023px) {
+    .shell {
+      padding-inline: 1.5rem;
+    }
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  /* Feed / sheet motion hooks. */
+  .anim-feed {
+    animation: feed-in 0.45s var(--ease-glass) both;
+  }
+  .anim-rise {
+    animation: rise 0.25s var(--ease-glass) both;
+  }
+}
+
+/* Light mode never shows lime text: legacy `text-lime` call sites fall back
+   to olive, stray `text-primary` to ink. Unlayered so they beat utilities. */
+/* Sticky table headers etc. sit over scrolling rows: blur what passes under. */
+.bg-surface {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.light .text-lime {
+  color: var(--positive);
+}
+.light .text-primary {
+  color: var(--foreground);
+}
+
+/* Inline text links: lime on dark; ink with a lime underline on light. */
+.link-accent {
+  color: var(--link);
+}
+.light .link-accent {
+  text-decoration-line: underline;
+  text-decoration-color: var(--lime);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+/* Keyboard focus on light: the (deeper) lime ring plus a light-grey 1px
+   offset outline — soft by design (owner: no dark outlines). */
+.light :focus-visible {
+  outline: 1px solid rgba(15, 26, 18, 0.18) !important;
+  outline-offset: 3px;
+}
+
+/* Motion: Lume always animates — the owner chose to ignore the OS "Reduce
+   motion" setting (see lib/motion.ts and MotionConfig in app/layout.tsx). */
+
+/* Responsive shell. Phones (below Tailwind `sm`) get a slim top header and a
+   bottom tab bar (components/shell/MobileNav.tsx); both clear the safe areas. */
+:root {
+  --bottombar-h: 0px;
+}
+@media (max-width: 639.98px) {
+  :root {
+    --topbar-h: calc(env(safe-area-inset-top) + 66px);
+    --bottombar-h: calc(env(safe-area-inset-bottom) + 86px);
+  }
+  .shell {
+    padding: calc(var(--topbar-h) + 0.75rem) 1rem calc(var(--bottombar-h) + 1rem);
+  }
+  .mobile-top {
+    top: calc(env(safe-area-inset-top) + 10px);
+  }
+  .mobile-bottom {
+    bottom: calc(env(safe-area-inset-bottom) + 10px);
+  }
+  /* The agent chat (html[data-chat], components/shell/MobileNav.tsx): no app
+     header or bottom bar — the chat's own slim header and drawer — and the page
+     never scrolls; only the message list does. */
+  html[data-chat] {
+    --topbar-h: 0px;
+    --bottombar-h: 0px;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  html[data-chat] body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  html[data-chat] .shell {
+    padding: 0;
+  }
+  /* On-screen keyboard open: drop the bottom bar so the composer gets the room. */
+  html[data-kb] {
+    --bottombar-h: 0px;
+  }
+  html[data-kb] .mobile-bottom {
+    display: none;
+  }
+  /* iOS zooms into inputs under 16px on focus. */
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  /* Glass is expensive on phones: lighter blur, same look. */
+  .glass,
+  .glass-overlay {
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+}
+
+/* Keyframes */
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* The agent's loader (components/agent/LumeLoader.tsx). */
+@keyframes lume-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes lume-breathe {
+  0%, 100% { transform: scale(0.82); opacity: 0.85; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+@keyframes lume-ripple {
+  0% { transform: scale(0.45); opacity: 0.9; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+@keyframes lume-sheen {
+  to { background-position: -200% 0; }
+}
+
+/* The agent page (html[data-chat], set on /agent by MobileNav) is full-page at every
+   width (owner, 2026-11-09): pure black, no wallpaper, no outlines, one colour for
+   every part — controls are a faint fill, not a box. Popovers keep their blur. */
+:root[data-chat] {
+  --background: #000000;
+  --bg: #000000;
+  --glass-fill: rgba(255, 255, 255, 0.05);
+  --glass-border: transparent;
+  --glass-highlight: transparent;
+  --glass-shadow: 0 0 #0000;
+  --glass-fill-strong: rgba(16, 16, 16, 0.6);
+  --bar-fill: rgba(255, 255, 255, 0.06);
+  --bar-shadow: 0 0 #0000;
+  --border: rgba(255, 255, 255, 0.07);
+  --line: rgba(255, 255, 255, 0.07);
+  --input: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+:root.light[data-chat] {
+  --background: #ffffff;
+  --bg: #ffffff;
+  --glass-fill: rgba(15, 26, 18, 0.04);
+  --glass-fill-strong: rgba(255, 255, 255, 0.6);
+  --bar-fill: rgba(15, 26, 18, 0.05);
+  --border: rgba(15, 26, 18, 0.08);
+  --line: rgba(15, 26, 18, 0.08);
+}
+html[data-chat] body {
+  background: var(--background);
+}
+html[data-chat] [data-app-bg],
+html[data-chat] [data-top-band] {
+  /* The agent is solid black edge to edge; the frosted band would sit over its toolbar
+     (the chat's fixed layer is z-10, the band z-20) and blur it. */
+  display: none;
+}
+html[data-chat] .glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* The dark background image: a slow pan and breathe (components/theme/AppBackground.tsx). */
+@keyframes bg-drift {
+  0% { transform: scale(1.08) translate3d(0, 0, 0); }
+  50% { transform: scale(1.16) translate3d(-3vw, 2vh, 0); }
+  100% { transform: scale(1.1) translate3d(2vw, -2vh, 0); }
+}
+@keyframes blob-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(8vw, 6vh, 0) scale(1.08); }
+}
+@keyframes blob-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-7vw, -5vh, 0) scale(1.1); }
+}
+@keyframes blob-drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-5vw, 7vh, 0) scale(0.95); }
+}
+@keyframes bar-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ── Pipeline diagrams (Agent card + Playground) ──────────────────────────
+   Card springs in (scale .96 + lift), nodes stagger in by rank, edges draw
+   (solid) or fade (dashed / animated). Delays come from inline styles. */
+.diagram-pop {
+  animation: diagram-pop 520ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+.diagram-node-in {
+  animation: diagram-node-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.diagram-edge-draw .react-flow__edge-path {
+  stroke-dasharray: 1600;
+  stroke-dashoffset: 1600;
+  animation: diagram-edge-draw 900ms ease-out forwards;
+  animation-delay: inherit;
+}
+.diagram-edge-fade .react-flow__edge-path,
+.diagram-edge-draw .react-flow__edge-text,
+.diagram-edge-fade .react-flow__edge-text,
+.diagram-edge-draw .react-flow__edge-textbg,
+.diagram-edge-fade .react-flow__edge-textbg {
+  animation: diagram-fade 500ms ease-out both;
+  animation-delay: inherit;
+}
+.diagram-switch {
+  animation: diagram-switch 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Edge stagger: the <g> carries the delay, its path/label inherit it. */
+.diagram-d-0 { animation-delay: 120ms; }
+.diagram-d-1 { animation-delay: 210ms; }
+.diagram-d-2 { animation-delay: 300ms; }
+.diagram-d-3 { animation-delay: 390ms; }
+.diagram-d-4 { animation-delay: 480ms; }
+.diagram-d-5 { animation-delay: 570ms; }
+.diagram-d-6 { animation-delay: 660ms; }
+.diagram-d-7 { animation-delay: 750ms; }
+.diagram-d-8 { animation-delay: 840ms; }
+.diagram-d-9 { animation-delay: 930ms; }
+.diagram-d-10 { animation-delay: 1020ms; }
+.diagram-d-11 { animation-delay: 1110ms; }
+.diagram-d-12 { animation-delay: 1200ms; }
+.diagram-d-13 { animation-delay: 1290ms; }
+.diagram-d-14 { animation-delay: 1380ms; }
+.diagram-d-15 { animation-delay: 1470ms; }
+@keyframes diagram-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes diagram-node-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes diagram-edge-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes diagram-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes diagram-switch {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Agent split screen: the pipeline/leads panel slides in from the right while
+   the chat column eases left. */
+.split-panel-in {
+  animation: split-panel-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.split-chat-in {
+  animation: split-chat-in 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes split-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(48px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes split-chat-in {
+  from {
+    transform: translateX(28px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Thin, theme-aware scrollbars that sit inset from rounded panel edges. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fg-24) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 14px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--fg-24);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fg-46);
+}
+/* Text fades out just above a footer instead of being cut hard. */
+.scroll-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+/* Pipeline step details: the sheet slides in from the right, sections rise in turn. */
+.details-sheet-in {
+  animation: details-sheet-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.details-section-in {
+  animation: details-section-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes details-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes details-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* /operator check-in page (Phase G5): plain, static, no motion. Read by a
+   browsing Grok Bot, so semantic HTML with just enough styling to scan. */
+.operator-page { max-width: 72rem; font-size: 0.875rem; line-height: 1.5; }
+.operator-page h1 { font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0 0.25rem; }
+.operator-page h2 { font-size: 1.125rem; font-weight: 600; margin: 1.75rem 0 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
+.operator-page h3 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.25rem; }
+.operator-page pre { background: color-mix(in oklab, var(--foreground) 6%, transparent); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; overflow-x: auto; font-size: 0.8125rem; }
+.operator-page table { width: 100%; border-collapse: collapse; margin: 0.25rem 0 0.75rem; }
+.operator-page th, .operator-page td { border: 1px solid var(--border); padding: 0.375rem 0.5rem; text-align: left; vertical-align: top; }
+.operator-page th { font-weight: 600; }
+.operator-page form { display: inline; margin-right: 0.375rem; }
+.operator-page form.block { display: block; margin: 0.375rem 0; }
+.operator-page button { border: 1px solid var(--border); border-radius: 6px; padding: 0.125rem 0.625rem; margin: 0.125rem 0; background: transparent; color: var(--foreground); cursor: pointer; }
+.operator-page button[data-tone='approve'] { background: var(--lime); color: #050505; border-color: var(--lime); }
+.operator-page button[data-tone='reject'] { border-color: var(--destructive); color: var(--destructive); }
+.operator-page input[type='text'], .operator-page input[type='number'], .operator-page input[type='url'] { border: 1px solid var(--border); border-radius: 6px; padding: 0.125rem 0.375rem; background: transparent; color: var(--foreground); min-width: 14rem; }
+.operator-page .flash { border: 1px solid var(--lime); border-radius: 6px; padding: 0.375rem 0.75rem; margin: 0.5rem 0; }
+.operator-page .flash-error { border: 1px solid var(--destructive); border-radius: 6px; padding: 0.375rem 0.75rem; margin: 0.5rem 0; color: var(--destructive); }
+.operator-page .muted { color: var(--muted-foreground); }
+.operator-page .urgent { color: var(--destructive); font-weight: 600; }
+.operator-page a { text-decoration: underline; }

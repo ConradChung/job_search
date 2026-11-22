@@ -1,0 +1,47 @@
+import { NextResponse, type NextRequest } from 'next/server'
+import { updateSession } from '@/lib/supabase/middleware'
+import { isOwner } from '@/lib/auth/isOwner'
+
+/**
+ * Single-owner gate (same model as Lume). Public: /login, /auth/*, the
+ * magic-link endpoint. APIs get 401/403 JSON; pages redirect to /login.
+ */
+const PUBLIC = ['/login', '/api/auth/magic-link']
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const isAuthPage = PUBLIC.includes(pathname) || pathname.startsWith('/auth/')
+  const isApi = pathname.startsWith('/api/')
+
+  const { response, user } = await updateSession(request)
+  const owner = isOwner(user?.email, process.env.ALLOWED_EMAIL)
+
+  if (isAuthPage) {
+    if (pathname === '/login' && owner) return redirectTo('/jobs', request, response)
+    return response
+  }
+  if (!user || !owner) {
+    if (isApi) return jsonError(user ? 'forbidden' : 'unauthenticated', user ? 403 : 401, response)
+    return redirectTo('/login', request, response)
+  }
+  return response
+}
+
+function redirectTo(pathname: string, request: NextRequest, from: NextResponse) {
+  const url = request.nextUrl.clone()
+  url.pathname = pathname
+  url.search = ''
+  const to = NextResponse.redirect(url)
+  for (const c of from.cookies.getAll()) to.cookies.set(c)
+  return to
+}
+
+function jsonError(error: string, status: 401 | 403, from: NextResponse) {
+  const to = NextResponse.json({ error }, { status })
+  for (const c of from.cookies.getAll()) to.cookies.set(c)
+  return to
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+}
