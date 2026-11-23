@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import type { CompanyJob, CompanyView } from '@/lib/people/companies'
 import { blocks, FIT_TRACKS, tierOf, type FitTrack } from '@/lib/jobs/fit'
 import { ExportPanel, ImportButton } from './ExportPanel'
+import { applyFilters, countFor, countTiers, culprits, fitAfterTierChange, rollupStatus, rowTrack, type Filters, type Group } from '@/lib/pipeline/filters'
 import { STATUSES, statusMeta } from '@/lib/jobs/statuses'
 import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
 import { BRANCH_LABEL, BRANCH_ORDER, EST_COST_PER_SEARCH, maxSearches, type Branch } from '@/lib/people/targets'
@@ -36,13 +37,10 @@ const LIVENESS: Record<string, { dot: string; label: string }> = {
 const BOARD_LABEL: Record<string, string> = { ashby: 'Ashby', greenhouse: 'Greenhouse', lever: 'Lever', linkedin: 'LinkedIn', other: 'Job page' }
 
 /** Pipeline order: the furthest-along status across a company's roles is its rollup. */
-const STATUS_RANK: Record<string, number> = { offer: 6, interviewing: 5, applied: 4, reached_out: 3, new: 2, rejected: 1, not_fit: 0 }
-const rollupStatus = (roles: CompanyJob[]) => roles.reduce((best, r) => ((STATUS_RANK[r.status] ?? 0) > (STATUS_RANK[best] ?? 0) ? r.status : best), roles[0]?.status ?? 'new')
 
 const trackLabel = (t: FitTrack) => (t === 'blocked' ? 'Blocked' : PROFILE.constraints.tracks[t]?.label ?? t)
 
 /** The tier a company row sits in: its best role's track when it passes (or is overridden), else blocked. */
-export const rowTrack = (c: CompanyView): FitTrack => (c.passes || c.override ? c.fitTrack : 'blocked')
 /** Tracks in tier order: Tier 1 GTM Eng, Tier 2 SDR/BDR, Tier 3 RevOps. */
 const TIERS = [...FIT_TRACKS].sort((a, b) => tierOf(a) - tierOf(b))
 
@@ -112,22 +110,29 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
     ]
   }, [companies])
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return companies.filter(
-      (c) =>
-        (band === 'all' || c.band === band) &&
-        (tiers.size === 0 || tiers.has(rowTrack(c))) &&
-        (status === 'all' || c.roles.some((r) => r.status === status)) &&
-        (section === 'all' || c.sections.includes(section)) &&
-        (fitFilter === 'all' || (fitFilter === 'passes' ? c.passes || c.override : !(c.passes || c.override))) &&
-        (peopleFilter === 'all' || (peopleFilter === 'none' ? c.people.length === 0 : c.people.length > 0)) &&
-        (!q ||
-          c.name.toLowerCase().includes(q) ||
-          c.roles.some((r) => (r.title ?? '').toLowerCase().includes(q) || (r.location ?? '').toLowerCase().includes(q)) ||
-          c.people.some((p) => p.full_name.toLowerCase().includes(q)))
-    )
-  }, [companies, query, band, tiers, status, section, fitFilter, peopleFilter])
+  const filters: Filters = useMemo(
+    () => ({ tiers, fit: fitFilter, people: peopleFilter, section, status, band, query }),
+    [tiers, fitFilter, peopleFilter, section, status, band, query]
+  )
+  const visible = useMemo(() => applyFilters(companies, filters), [companies, filters])
+  /** Rows if this chip were clicked, given every other active filter. */
+  const n = <G extends Group>(g: G, v: Filters[G]) => countFor(companies, filters, g, v)
+  const chooseTiers = (next: Set<FitTrack>) => {
+    setFitFilter(fitAfterTierChange(companies, filters, next))
+    setTiers(next)
+  }
+  const clearFilter = (g: Group) => {
+    const reset: { [K in Group]: () => void } = {
+      tiers: () => setTiers(new Set()),
+      fit: () => setFitFilter('all'),
+      people: () => setPeopleFilter('all'),
+      section: () => setSection('all'),
+      status: () => setStatus('all'),
+      band: () => setBand('all'),
+      query: () => setQuery(''),
+    }
+    reset[g]()
+  }
 
   const searchesFor = (c: CompanyView) => maxSearches(c.band, c.track, c.fitTrack === 'sdr')
   const unsearched = visible.filter((c) => !c.searchedAt)
@@ -384,7 +389,8 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
         </GlassCard>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+      <div className="-mb-3 text-[11px] text-fg-46">Totals across all companies; the filters below do not change these.</div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6" aria-label="Totals across all companies">
         {stats.map((s) => (
           <GlassCard key={s.label} size="sm" className="gap-0 px-3.5 py-3">
             <div className="truncate text-[12px] font-medium text-muted-foreground">{s.label}</div>
@@ -407,23 +413,21 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
               <span key={t} title="Click to show this tier; shift-click to add it">
                 <Chip
                   active={tiers.has(t)}
+                  dim={countTiers(companies, filters, new Set([t])) === 0}
                   onClick={(e?: React.MouseEvent) => {
                     const add = !!e && (e.shiftKey || e.metaKey || e.ctrlKey)
-                    setTiers((s) => {
-                      if (!add) return new Set([t])
-                      const n = new Set(s)
-                      if (n.has(t)) n.delete(t)
-                      else n.add(t)
-                      return n
-                    })
+                    const next = new Set(add ? tiers : [])
+                    if (add && next.has(t)) next.delete(t)
+                    else next.add(t)
+                    chooseTiers(next)
                   }}
                 >
-                  {t === 'blocked' ? 'Blocked' : `Tier ${tierOf(t)} · ${trackLabel(t)}`} <Count n={companies.filter((c) => rowTrack(c) === t).length} />
+                  {t === 'blocked' ? 'Blocked' : `Tier ${tierOf(t)} · ${trackLabel(t)}`} <Count n={countTiers(companies, filters, new Set([t]))} />
                 </Chip>
               </span>
             ))}
-            <Chip active={tiers.size === 0} onClick={() => setTiers(new Set())}>
-              All
+            <Chip active={tiers.size === 0} onClick={() => chooseTiers(new Set())}>
+              All <Count n={countTiers(companies, filters, new Set())} />
             </Chip>
           </div>
           <Segmented
@@ -431,9 +435,9 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
             value={fitFilter}
             onChange={setFitFilter}
             options={[
-              { value: 'passes', label: 'Passes' },
-              { value: 'flagged', label: 'Flagged' },
-              { value: 'all', label: 'All' },
+              { value: 'passes', label: 'Passes', count: n('fit', 'passes') },
+              { value: 'flagged', label: 'Flagged', count: n('fit', 'flagged') },
+              { value: 'all', label: 'All', count: n('fit', 'all') },
             ]}
           />
           <Segmented
@@ -441,9 +445,9 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
             value={peopleFilter}
             onChange={setPeopleFilter}
             options={[
-              { value: 'all', label: 'All' },
-              { value: 'none', label: 'No people' },
-              { value: 'has', label: 'Has people' },
+              { value: 'all', label: 'All', count: n('people', 'all') },
+              { value: 'none', label: 'No people', count: n('people', 'none') },
+              { value: 'has', label: 'Has people', count: n('people', 'has') },
             ]}
           />
           <Segmented
@@ -451,37 +455,37 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
             value={section}
             onChange={setSection}
             options={[
-              { value: 'all', label: 'All' },
-              { value: 'main', label: 'Main' },
-              { value: 'referrals', label: 'Referrals' },
+              { value: 'all', label: 'All', count: n('section', 'all') },
+              { value: 'main', label: 'Main', count: n('section', 'main') },
+              { value: 'referrals', label: 'Referrals', count: n('section', 'referrals') },
             ]}
           />
           <span className="ml-auto font-mono text-[11px] text-fg-46 tabular-nums">
-            {visible.length} / {companies.length}
+            {visible.length} shown · {companies.length} total
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-[18px] py-2.5">
           <Chip active={status === 'all'} onClick={() => setStatus('all')}>
-            Any status
+            Any status <Count n={n('status', 'all')} />
           </Chip>
           {STATUSES.map((s) => (
-            <Chip key={s.value} active={status === s.value} onClick={() => setStatus(s.value)}>
-              {s.label} <Count n={companies.filter((c) => c.roles.some((r) => r.status === s.value)).length} />
+            <Chip key={s.value} active={status === s.value} dim={n('status', s.value) === 0} onClick={() => setStatus(s.value)}>
+              {s.label} <Count n={n('status', s.value)} />
             </Chip>
           ))}
           <span className="mx-1 h-4 w-px bg-line" aria-hidden />
           <Chip active={band === 'all'} onClick={() => setBand('all')}>
-            All sizes
+            All sizes <Count n={n('band', 'all')} />
           </Chip>
           {(['small', 'medium', 'large'] as const).map((b) => (
-            <Chip key={b} active={band === b} onClick={() => setBand(b)}>
-              {BAND_LABEL[b]} <Count n={companies.filter((c) => c.band === b).length} />
+            <Chip key={b} active={band === b} dim={n('band', b) === 0} onClick={() => setBand(b)}>
+              {BAND_LABEL[b]} <Count n={n('band', b)} />
             </Chip>
           ))}
         </div>
 
         {visible.length === 0 ? (
-          <p className="border-t border-line px-[18px] py-10 text-center text-[13px] text-fg-46">No companies match these filters.</p>
+          <EmptyState companies={companies} filters={filters} onClear={clearFilter} onClearAll={() => (Object.keys(filters) as Group[]).forEach(clearFilter)} />
         ) : (
           <div className="max-h-[calc(100dvh-420px)] min-h-[360px] overflow-auto border-t border-line">
             <table className="w-full border-collapse text-[12px]">
@@ -696,6 +700,46 @@ function NotesEditor({ initial, onSave }: { initial: string; onSave: (v: string)
 }
 
 /** One open role in the expanded row: its own status, flags, posting and notes. */
+const FILTER_LABEL: Record<Group, (f: Filters) => string> = {
+  tiers: (f) => `Tier: ${[...f.tiers].map((t) => (t === 'blocked' ? 'Blocked' : `Tier ${tierOf(t)}`)).join(' + ')}`,
+  fit: (f) => `Fit: ${f.fit === 'passes' ? 'Passes' : 'Flagged'}`,
+  people: (f) => `People: ${f.people === 'none' ? 'No people' : 'Has people'}`,
+  section: (f) => `Section: ${f.section === 'main' ? 'Main' : 'Referrals'}`,
+  status: (f) => `Status: ${statusMeta(f.status).label}`,
+  band: (f) => `Size: ${f.band === 'all' ? '' : BAND_LABEL[f.band]}`,
+  query: (f) => `Search: "${f.query.trim()}"`,
+}
+
+/** Zero rows: name the filter that causes it and offer to clear it in one click. */
+function EmptyState({ companies, filters, onClear, onClearAll }: { companies: CompanyView[]; filters: Filters; onClear: (g: Group) => void; onClearAll: () => void }) {
+  const found = culprits(companies, filters)
+  return (
+    <div className="flex flex-col items-center gap-2.5 border-t border-line px-[18px] py-10 text-center text-[13px] text-fg-46">
+      {found.length ? (
+        <>
+          <p>
+            No companies match. <span className="text-fg">{FILTER_LABEL[found[0].group](filters)}</span> is what empties the table.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {found.map((x) => (
+              <Button key={x.group} size="sm" variant={x === found[0] ? 'default' : 'outline'} onClick={() => onClear(x.group)}>
+                Clear {FILTER_LABEL[x.group](filters)} · {x.rows} row{x.rows === 1 ? '' : 's'}
+              </Button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <p>No companies match, and no single filter is to blame: it takes clearing several.</p>
+          <Button size="sm" onClick={onClearAll}>
+            Clear all filters
+          </Button>
+        </>
+      )}
+    </div>
+  )
+}
+
 /** The classifier's one-line reason for the category, so odd titles read clearly. */
 function ReasonLine({ reason, className }: { reason?: string | null; className?: string }) {
   if (!reason) return null

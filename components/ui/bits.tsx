@@ -49,7 +49,7 @@ export function Segmented<T extends string | number>({
   label: string
   value: T
   onChange: (v: T) => void
-  options: { value: T; label: string }[]
+  options: { value: T; label: React.ReactNode; count?: number }[]
 }) {
   return (
     <div role="group" aria-label={label} className="inline-flex rounded-lg border border-line p-0.5">
@@ -61,17 +61,20 @@ export function Segmented<T extends string | number>({
           onClick={() => onChange(o.value)}
           className={cn(
             'h-6 rounded-md px-2 text-[12px] text-fg-46 transition-colors hover:text-fg',
-            value === o.value && 'bg-muted text-fg'
+            value === o.value && 'bg-muted text-fg',
+            o.count === 0 && value !== o.value && 'opacity-40'
           )}
         >
           {o.label}
+          {o.count !== undefined && <span className="ml-1 font-mono text-[11px] tabular-nums opacity-70">{o.count}</span>}
         </button>
       ))}
     </div>
   )
 }
 
-export function Chip({ active, onClick, children }: { active: boolean; onClick: (e?: React.MouseEvent) => void; children: React.ReactNode }) {
+/** dim: clicking would show no rows (kept visible, not hidden). */
+export function Chip({ active, onClick, children, dim = false }: { active: boolean; onClick: (e?: React.MouseEvent) => void; children: React.ReactNode; dim?: boolean }) {
   return (
     <button
       type="button"
@@ -79,7 +82,8 @@ export function Chip({ active, onClick, children }: { active: boolean; onClick: 
       onClick={onClick}
       className={cn(
         'inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors',
-        active ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-46 hover:text-fg'
+        active ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-46 hover:text-fg',
+        dim && !active && 'opacity-40'
       )}
     >
       {children}
