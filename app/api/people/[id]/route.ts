@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireOwner } from '@/lib/auth/requireOwner'
 import { createServiceClient } from '@/lib/supabase/service'
 import { OUTREACH_VALUES, PERSON_COLUMNS } from '@/lib/people/types'
+import { noteProblems } from '@/lib/drafts/check'
 
 const Patch = z
   .object({
@@ -18,7 +19,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: 'bad id' }, { status: 400 })
   const parsed = Patch.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'bad body' }, { status: 400 })
-  const { data, error } = await createServiceClient().from('people').update(parsed.data).eq('id', id).select(PERSON_COLUMNS).maybeSingle()
+  const db = createServiceClient()
+  // An edited note must pass the same code checks as a generated one.
+  if (parsed.data.draft) {
+    const problems = await noteProblems(db, id, parsed.data.draft)
+    if (problems.length) return NextResponse.json({ error: problems.join(' '), problems }, { status: 422 })
+  }
+  const { data, error } = await db.from('people').update(parsed.data).eq('id', id).select(PERSON_COLUMNS).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'not found' }, { status: 404 })
   return NextResponse.json(data)

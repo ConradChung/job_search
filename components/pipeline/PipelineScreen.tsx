@@ -70,6 +70,7 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
   // Owner (2026-11-24): the page opens on Tier 1; click a tier to switch, shift-click to add one. Empty = all.
   const [tiers, setTiers] = useState<Set<FitTrack>>(() => new Set(openKey ? [] : ['gtm_eng']))
   const [exporting, setExporting] = useState(false)
+  const [confirmingApprove, setConfirmingApprove] = useState(false)
   const [status, setStatus] = useState<string>('all')
   const [section, setSection] = useState<Section>('all')
   const [fitFilter, setFitFilter] = useState<FitFilter>(openKey ? 'all' : 'passes')
@@ -145,6 +146,21 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
   const undrafted = visible
     .filter((c) => c.canDraft)
     .flatMap((c) => c.people.filter((p) => targets.has(p.id) && !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))
+
+  // Bulk approve (owner, 2026-11-23): Drafted notes in the rows currently filtered.
+  const toApprove = visible.flatMap((c) => c.people.filter((p) => p.outreach_status === 'drafted' && p.draft).map((p) => p.id))
+  async function approveAll() {
+    setConfirmingApprove(false)
+    const res = await fetch('/api/people/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: toApprove }) }).catch(() => null)
+    const r = await res?.json().catch(() => null)
+    if (!res?.ok || !r) return toast.error(r?.error ?? 'Could not approve. Nothing changed.')
+    const refused = r.refused as { name: string; company: string; problems: string[] }[]
+    toast.success(`Approved ${r.approved.length}${refused.length ? `; ${refused.length} left Drafted because they fail the checks` : ''}.`, {
+      description: refused.map((x) => `${x.name} (${x.company}): ${x.problems.join(' ')}`).join('\n') || undefined,
+      duration: refused.length ? 20000 : 5000,
+    })
+    router.refresh()
+  }
 
   function sync() {
     startSync(async () => {
@@ -248,7 +264,10 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ draft }),
     }).catch(() => null)
-    if (!res?.ok) return toast.error('Could not save the draft.')
+    if (!res?.ok) {
+      const body = await res?.json().catch(() => null)
+      return toast.error(body?.problems ? 'Not saved: the note fails the checks.' : 'Could not save the draft.', { description: body?.problems?.join('\n'), duration: 12000 })
+    }
     patchPerson(c.key, p.id, await res.json())
   }
 
@@ -339,6 +358,10 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
           ) : (
             <>
               <ImportButton onDone={() => router.refresh()} />
+              <Button variant="outline" onClick={() => setConfirmingApprove(true)} disabled={toApprove.length === 0}>
+                <Check aria-hidden />
+                Approve notes · {toApprove.length}
+              </Button>
               <Button variant="outline" onClick={() => setExporting((v) => !v)}>
                 <Download aria-hidden />
                 Export CSV
@@ -371,6 +394,18 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
             Cancel
           </Button>
           <Button onClick={() => findPeople(unsearched)}>Run search</Button>
+        </GlassCard>
+      )}
+
+      {confirmingApprove && (
+        <GlassCard size="sm" className="flex-row flex-wrap items-center gap-3 px-4">
+          <div className="min-w-0 flex-1 text-[13px] text-fg-70">
+            Approve <span className="text-fg">{toApprove.length}</span> Drafted notes in the rows shown now. Each is checked first (length, numbers, wording, proof-point rules); any that fail stay Drafted and are listed. Nothing is sent.
+          </div>
+          <Button variant="ghost" onClick={() => setConfirmingApprove(false)}>
+            Cancel
+          </Button>
+          <Button onClick={approveAll}>Approve {toApprove.length}</Button>
         </GlassCard>
       )}
 
