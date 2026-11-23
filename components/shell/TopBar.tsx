@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
+import { NavLinks } from '@/components/shell/NavLinks'
 
 /** Floating corner controls, Lume-style: brand pill top-left, theme + sign-out top-right. */
 export function TopBar() {
@@ -10,6 +11,7 @@ export function TopBar() {
         <span className="size-2 rounded-full bg-primary dark:shadow-(--primary-glow)" aria-hidden />
         job hunt
       </Link>
+      <NavLinks />
       <div className="glass pointer-events-auto flex h-11 items-center gap-1 rounded-full px-1">
         <ThemeToggle />
         <form action="/api/auth/sign-out" method="post">

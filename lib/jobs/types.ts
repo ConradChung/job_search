@@ -2,6 +2,7 @@
 export interface JobRow {
   id: number
   company: string
+  company_key: string
   title: string | null
   link: string
   section: 'main' | 'referrals'
@@ -26,4 +27,4 @@ export interface JobRow {
 }
 
 export const JOB_COLUMNS =
-  'id, company, title, link, section, fit_tier, status, email_sent, notes, status_changed_at, liveness, funding_stage, salary_text, salary_min, salary_max, location, posted_at, company_website, company_linkedin, job_poster_name, job_poster_title, job_poster_url, board'
+  'id, company, company_key, title, link, section, fit_tier, status, email_sent, notes, status_changed_at, liveness, funding_stage, salary_text, salary_min, salary_max, location, posted_at, company_website, company_linkedin, job_poster_name, job_poster_title, job_poster_url, board'

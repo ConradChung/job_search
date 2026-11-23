@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "sync": "tsx --env-file=.env.local scripts/sync.ts"
+    "sync": "tsx --env-file=.env.local scripts/sync.ts",
+    "people": "tsx --env-file=.env.local scripts/find-people.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

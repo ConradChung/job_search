@@ -1,6 +1,6 @@
 # Spec: company → people tree
 
-Status: draft for approval (2026-11-22). Feeds Linear GTM-21 (contact finder + drafts) and GTM-22 (sender).
+Status: **built 2026-11-22** (phases 1 + 2a: people table, Companies tree, Exa find-people; Clay not wired). See "Build notes" at the end. Feeds Linear GTM-21 (contact finder + drafts) and GTM-22 (sender).
 
 ## Goal
 
@@ -186,3 +186,19 @@ Still open:
 1. The medium-band rules above (proposed default).
 2. Clay for the UCLA branch and gaps, or Exa only? Exa can search "UCLA alumni at <company>"; Clay's
    school filter is stricter.
+
+## Build notes (2026-11-22)
+
+- **Fallback reading of the owner's rules:** small and medium companies search recruiting **and** GTM leadership
+  together; "higher up the chain" only runs when no GTM / sales head turns up. Large companies fall through the
+  recruiting levels in order. Code: `lib/people/targets.ts` (`PLANS`).
+- **Company match:** a person counts only if a "(Current)" role names the company exactly (high confidence) or
+  the headline ends in "@ Company" (medium; shown with a "check" tag). No prefix matching ("Engine" is not
+  "Engine Room").
+- **Alumni ranking:** GTM / sales / recruiting alumni rank above engineers and other roles.
+- **Trial, 10 tier-1 companies:** 32 searches, **$0.238**, 29 people saved (plus 48 job posters seeded),
+  UCLA alumni at 4 of 10. Large companies got talent leads (VP Talent Acquisition, Head of Global TA), medium got
+  GTM leaders (VP RevOps, Global Head of Sales Development), and a company with no GTM head fell back to its
+  co-founders.
+- **Run it:** Companies page → "Find people" (per company or for the filtered list, after a cost preview), or
+  `npm run people -- --tier 2 --limit 50` (preview) then add `--yes`.

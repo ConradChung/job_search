@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ExternalLink, Globe, Info, RefreshCw, Search, StickyNote } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHead } from '@/components/shell/PageHead'
@@ -9,17 +10,10 @@ import { GlassCard } from '@/components/ui/glass-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { STATUSES, statusMeta, type Tone } from '@/lib/jobs/statuses'
+import { STATUSES, statusMeta } from '@/lib/jobs/statuses'
+import { Chip, Count, IconLink, LinkedInMark, Segmented, TONE, TierPill } from '@/components/ui/bits'
 import type { JobRow } from '@/lib/jobs/types'
-import { TIERS, tierMeta } from '@/lib/jobs/tiers'
-
-const TONE: Record<Tone, string> = {
-  wait: 'bg-amber/12 text-amber border-amber/25',
-  run: 'bg-violet/12 text-violet-soft border-violet/25',
-  ok: 'bg-green/12 text-green border-green/25',
-  bad: 'bg-red/12 text-red border-red/25',
-  idle: 'bg-white/[.04] text-fg-46 border-line',
-}
+import { TIERS } from '@/lib/jobs/tiers'
 
 const LIVENESS: Record<JobRow['liveness'], { dot: string; label: string }> = {
   live: { dot: 'bg-green', label: 'Live' },
@@ -29,7 +23,7 @@ const LIVENESS: Record<JobRow['liveness'], { dot: string; label: string }> = {
 
 type Section = 'all' | 'main' | 'referrals'
 
-export function JobsScreen({ initial }: { initial: JobRow[] }) {
+export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopleCounts: Record<string, number> }) {
   const router = useRouter()
   const [jobs, setJobs] = useState(initial)
   const [query, setQuery] = useState('')
@@ -218,7 +212,7 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
             <table className="w-full border-collapse text-[12px]">
               <thead className="sticky top-0 z-[1] bg-surface text-left text-[11px] text-fg-46">
                 <tr>
-                  {['Company', 'Role', 'Posting', 'Fit tier', 'Status', 'Funding', 'Salary', 'Location', 'Posted', 'Live', ''].map((c, i) => (
+                  {['Company', 'Role', 'Posting', 'Fit tier', 'Status', 'People', 'Funding', 'Salary', 'Location', 'Posted', 'Live', ''].map((c, i) => (
                     <th
                       key={i}
                       scope="col"
@@ -278,6 +272,17 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
                       <td className="px-3 py-2.5">
                         <StatusSelect value={j.status} onChange={(v) => patch(j.id, { status: v })} />
                       </td>
+                      <td className="px-3 py-2.5">
+                        <Link
+                          href={`/companies?open=${encodeURIComponent(j.company_key)}`}
+                          className={cn(
+                            'inline-flex h-6 items-center rounded-full border px-2 text-[11px] whitespace-nowrap transition-colors hover:border-primary/40 hover:text-fg',
+                            peopleCounts[j.company_key] ? 'border-line text-fg-70' : 'border-dashed border-line text-fg-46'
+                          )}
+                        >
+                          {peopleCounts[j.company_key] ? `${peopleCounts[j.company_key]} ${peopleCounts[j.company_key] === 1 ? 'person' : 'people'}` : 'Find'}
+                        </Link>
+                      </td>
                       <td className="hidden px-3 py-2.5 whitespace-nowrap lg:table-cell">{j.funding_stage ?? '—'}</td>
                       <td className="hidden px-3 py-2.5 whitespace-nowrap font-mono tabular-nums lg:table-cell">
                         {salaryLabel(j)}
@@ -309,7 +314,7 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
                     </tr>
                     {openNotes === j.id && (
                       <tr className="border-b border-line/60 bg-accent/40">
-                        <td colSpan={11} className="px-[18px] py-3">
+                        <td colSpan={12} className="px-[18px] py-3">
                           <NotesEditor
                             initial={j.notes ?? ''}
                             onSave={(notes) => {
@@ -337,47 +342,6 @@ const BOARD_LABEL: Record<string, string> = {
   lever: 'Lever',
   linkedin: 'LinkedIn',
   other: 'Job page',
-}
-
-function IconLink({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={label}
-      title={label}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-fg-46 transition-colors hover:text-primary"
-    >
-      {children}
-    </a>
-  )
-}
-
-/** LinkedIn "in" mark (lucide dropped brand icons). */
-function LinkedInMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor" aria-hidden>
-      <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z" />
-    </svg>
-  )
-}
-
-function TierPill({ tier }: { tier: number | null }) {
-  const meta = tierMeta(tier)
-  if (!meta) return <span className="text-fg-46" title="No tier in the sheet">—</span>
-  return (
-    <span
-      title={`Tier ${meta.tier}: ${meta.label}. ${meta.rule}`}
-      className={cn(
-        'inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[11px] whitespace-nowrap',
-        meta.tier === 1 ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-70'
-      )}
-    >
-      <span className="font-mono tabular-nums">{meta.tier}</span>
-      {meta.short}
-    </span>
-  )
 }
 
 function salaryLabel(j: JobRow) {
@@ -428,53 +392,3 @@ function NotesEditor({ initial, onSave }: { initial: string; onSave: (v: string)
   )
 }
 
-function Segmented<T extends string | number>({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string
-  value: T
-  onChange: (v: T) => void
-  options: { value: T; label: string }[]
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex rounded-lg border border-line p-0.5">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          aria-pressed={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            'h-6 rounded-md px-2 text-[12px] text-fg-46 transition-colors hover:text-fg',
-            value === o.value && 'bg-muted text-fg'
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors',
-        active ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-46 hover:text-fg'
-      )}
-    >
-      {children}
-    </button>
-  )
-}
-
-function Count({ n }: { n: number }) {
-  return <span className="font-mono tabular-nums opacity-70">{n}</span>
-}

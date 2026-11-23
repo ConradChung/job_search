@@ -25,6 +25,20 @@ async function loadJobs(): Promise<JobRow[]> {
   return out
 }
 
+/** People per company, for the People chip. */
+async function loadPeopleCounts(): Promise<Record<string, number>> {
+  const db = createServiceClient()
+  const counts: Record<string, number> = {}
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from('people').select('company_key').order('id').range(from, from + 999)
+    if (error) throw new Error(`load people: ${error.message}`)
+    for (const r of data ?? []) counts[r.company_key] = (counts[r.company_key] ?? 0) + 1
+    if (!data || data.length < 1000) break
+  }
+  return counts
+}
+
 export default async function JobsPage() {
-  return <JobsScreen initial={await loadJobs()} />
+  const [jobs, peopleCounts] = await Promise.all([loadJobs(), loadPeopleCounts()])
+  return <JobsScreen initial={jobs} peopleCounts={peopleCounts} />
 }
