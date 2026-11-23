@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CategoryPill, Chip, Count, FlagChips, IconLink, LinkedInMark, Segmented, TONE } from '@/components/ui/bits'
 import { PROFILE } from '@/lib/profile'
+import { draftTargetIds } from '@/lib/drafts/targets'
 import { cn } from '@/lib/utils'
 import type { CompanyView } from '@/lib/people/companies'
 import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
@@ -69,7 +70,10 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
   const unsearched = visible.filter((c) => !c.searchedAt)
   const estimate = (list: CompanyView[]) => list.reduce((n, c) => n + maxSearches(c.band, c.track), 0) * EST_COST_PER_SEARCH
 
-  const undrafted = visible.filter((c) => c.canDraft).flatMap((c) => c.people.filter((p) => !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))
+  const targets = useMemo(() => draftTargetIds(companies.flatMap((c) => c.people)), [companies])
+  const undrafted = visible
+    .filter((c) => c.canDraft)
+    .flatMap((c) => c.people.filter((p) => targets.has(p.id) && !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))
 
   async function draftPerson(c: CompanyView, p: PersonRow, quiet = false): Promise<boolean> {
     setDrafting((s) => new Set(s).add(p.id))
@@ -250,7 +254,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
       {confirmingDrafts && (
         <GlassCard size="sm" className="flex-row flex-wrap items-center gap-3 px-4">
           <div className="min-w-0 flex-1 text-[13px] text-fg-70">
-            Draft LinkedIn notes for <span className="text-fg">{undrafted.length}</span> people in this view with Claude Opus 5.5: about{' '}
+            Draft LinkedIn notes for <span className="text-fg">{undrafted.length}</span> people (top alum + top recruiter per company) in this view with Claude Opus 5.5: about{' '}
             <span className="font-mono text-fg">${(undrafted.length * DRAFT_COST).toFixed(2)}</span>. Nothing is sent; you review each one.
           </div>
           <Button variant="ghost" onClick={() => setConfirmingDrafts(false)}>
@@ -375,7 +379,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
                   {isOpen && (
                     <CompanyTree
                       company={c}
-                      actions={{ onOutreach: setOutreach, onRemove: removePerson, onDraft: (co, p) => draftPerson(co, p), onSaveDraft: saveDraft, drafting }}
+                      actions={{ onOutreach: setOutreach, onRemove: removePerson, onDraft: (co, p) => draftPerson(co, p), onSaveDraft: saveDraft, drafting, targets }}
                       onOverride={(v) => setOverride(c, v)}
                       onAdded={() => router.refresh()}
                     />
@@ -396,6 +400,8 @@ interface PersonActions {
   onDraft: (c: CompanyView, p: PersonRow) => void
   onSaveDraft: (c: CompanyView, p: PersonRow, draft: string) => void
   drafting: Set<number>
+  /** Top alum + top recruiter per company: the only people drafted by default. */
+  targets: Set<number>
 }
 
 function CompanyTree({
@@ -498,7 +504,8 @@ function CompanyTree({
 }
 
 function PersonLine({ company, person: p, actions }: { company: CompanyView; person: PersonRow; actions: PersonActions }) {
-  const { onOutreach, onRemove, onDraft, onSaveDraft, drafting } = actions
+  const { onOutreach, onRemove, onDraft, onSaveDraft, drafting, targets } = actions
+  const fallback = !targets.has(p.id)
   const meta = OUTREACH.find((o) => o.value === p.outreach_status) ?? OUTREACH[0]
   const busy = drafting.has(p.id)
   return (
@@ -512,6 +519,11 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
         {p.title ?? '—'}
       </span>
       {p.is_ucla && p.branch !== 'alumni' && <span className="rounded-full border border-primary/40 bg-primary/12 px-1.5 text-[10px] text-fg">UCLA</span>}
+      {fallback && (
+        <span className="rounded-full border border-line px-1.5 text-[10px] text-fg-46" title="Held as a fallback: only the top alum and top recruiter are drafted">
+          fallback
+        </span>
+      )}
       {p.confidence === 'medium' && (
         <span className="rounded-full border border-line px-1.5 text-[10px] text-fg-46" title="Matched on the LinkedIn headline only; check they still work here">
           check

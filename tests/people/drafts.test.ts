@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
+import { draftTargetIds } from '@/lib/drafts/targets'
+import { recruiterAsk } from '@/lib/drafts/prompt'
 import { PROFILE } from '@/lib/profile'
 
 const ctx: DraftContext = {
@@ -12,6 +14,7 @@ const ctx: DraftContext = {
   roleTitle: 'GTM Automation Engineer',
   mentionRole: true,
   proof: { key: 'systems', why: 'test' },
+  allowTools: true,
   siblings: [],
   limit: PROFILE.noteLimit,
 }
@@ -173,7 +176,7 @@ describe('angles', () => {
     expect(userPrompt({ ...ctx, branch: 'blockchain_ucla' })).toMatch(/Open with that shared club \(not "fellow Bruin"\)/)
   })
   it('recruiters: name the role, ask if in scope', () => {
-    expect(userPrompt({ ...ctx, branch: 'recruiting' })).toMatch(/whether Conrad is in scope/)
+    expect(userPrompt({ ...ctx, branch: 'recruiting' })).toMatch(/End with exactly this sentence/)
   })
   it('siblings are passed so the note differs', () => {
     expect(userPrompt({ ...ctx, siblings: ['Hi Ana, fellow Bruin here.'] })).toMatch(/must differ from each/)
@@ -220,5 +223,40 @@ describe('generateDraft', () => {
   it('throws on refusal', async () => {
     const { client } = fakeClient([{ text: '', stop: 'refusal' }])
     await expect(generateDraft(client, ctx)).rejects.toThrow(/refused/)
+  })
+})
+
+describe('note rules (owner, 2026-11-23 review)', () => {
+  const rec = { ...ctx, branch: 'recruiting' as const, title: 'Talent Acquisition', allowTools: false, company: 'Crexi', roleTitle: 'GTM Automation Engineer' }
+  it('graduation line is fixed', () => {
+    expect(draftProblems('Hi Sam, at UCLA through March 2027.', ctx).join()).toMatch(/graduating March 2027/)
+    expect(draftProblems('Hi Sam, class of March 2027.', ctx).join()).toMatch(/graduating March 2027/)
+    expect(draftProblems('Hi Sam, fellow Bruin here, graduating March 2027. How is your team set up?', ctx)).toEqual([])
+  })
+  it('recruiter ask is word for word', () => {
+    expect(recruiterAsk(rec)).toBe('Would I be in scope for the GTM Automation Engineer role at Crexi?')
+    expect(draftProblems('Hi Dana, could my background be considered for the role?', rec).join()).toMatch(/End with exactly/)
+    expect(draftProblems('Hi Dana, I run outbound for two startups I co-founded. Would I be in scope for the GTM Automation Engineer role at Crexi?', rec)).toEqual([])
+  })
+  it('tool names only for technical recruiters and engineering alumni', () => {
+    expect(draftProblems('Hi Dana, I build pipelines in Clay. Would I be in scope for the GTM Automation Engineer role at Crexi?', rec).join()).toMatch(/No tool names/)
+    expect(systemPrompt({ key: 'systems', why: '' }, 250, false)).not.toMatch(/\b(Clay|Supabase|Exa|Apify)\b/)
+    expect(systemPrompt({ key: 'systems', why: '' }, 250, true)).toMatch(/Clay/)
+  })
+  it('"Blockchain @ UCLA", never "my blockchain club"; no "I\'m at UCLA" after fellow Bruin', () => {
+    expect(draftProblems('Through my blockchain club I cold-emailed recruiters.', ctx).join()).toMatch(/Blockchain @ UCLA/)
+    expect(draftProblems("Hi Aryan, fellow Bruin here. I'm at UCLA, graduating March 2027.", ctx).join()).toMatch(/drop "I'm at UCLA"/)
+  })
+  it('only the top alum and top recruiter per company are drafted', () => {
+    const t = draftTargetIds([
+      { id: 1, company_key: 'a', branch: 'alumni', rank: 1 },
+      { id: 2, company_key: 'a', branch: 'alumni', rank: 2 },
+      { id: 3, company_key: 'a', branch: 'recruiting', rank: 2 },
+      { id: 4, company_key: 'a', branch: 'recruiting', rank: 1 },
+      { id: 5, company_key: 'a', branch: 'gtm_leadership', rank: 1 },
+      { id: 6, company_key: 'b', branch: 'blockchain_ucla', rank: 1 },
+      { id: 7, company_key: 'b', branch: 'alumni', rank: 1 },
+    ])
+    expect([...t].sort()).toEqual([1, 4, 6])
   })
 })

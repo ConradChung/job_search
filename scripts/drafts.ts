@@ -17,6 +17,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { DraftSkipped, draftForPerson } from '../lib/drafts/run'
 import { loadCompany } from '../lib/people/run'
+import { draftTargetIds } from '../lib/drafts/targets'
 
 const args = process.argv.slice(2)
 const flag = (n: string) => args.includes(`--${n}`)
@@ -52,7 +53,7 @@ async function main() {
   // Only untouched notes: anything approved, sent or replied is never redrafted.
   let q = db
     .from('people')
-    .select('id, company_key, company, full_name, branch')
+    .select('id, company_key, company, full_name, branch, rank')
     .in('outreach_status', status ? [status] : ['none', 'drafted'])
     .order('company_key')
     .order('branch')
@@ -64,7 +65,13 @@ async function main() {
   if (companies) q = q.in('company_key', companies.split(',').map((s) => s.trim()))
   const { data, error } = await q.limit(Number(opt('limit', '500')))
   if (error) throw new Error(error.message)
-  const people = data ?? []
+  // Top alum + top recruiter per company only, unless specific ids are given.
+  let people = data ?? []
+  if (!ids) {
+    const { data: everyone } = await db.from('people').select('id, company_key, branch, rank')
+    const targets = draftTargetIds(everyone ?? [])
+    people = people.filter((p) => targets.has(p.id))
+  }
 
   console.log(`${people.length} people, about $${(people.length * EST_PER_DRAFT).toFixed(2)} (estimate)`)
   if (!flag('yes')) {

@@ -15,6 +15,8 @@ export interface DraftContext {
   /** Alumni only: name the role only when the alum works in the role's function. */
   mentionRole: boolean
   proof: ProofChoice
+  /** Tool names only for technical recruiters and alumni in engineering. */
+  allowTools: boolean
   /** Notes already drafted for other people at this company (must not be reused). */
   siblings: string[]
   limit: number
@@ -24,16 +26,28 @@ const ANGLE: Record<DraftContext['branch'], (c: DraftContext) => string> = {
   blockchain_ucla: (c) =>
     `They were in Blockchain @ UCLA, the club Conrad is in now. Open with that shared club (not "fellow Bruin"); no partner names needed for the opener. Then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
   alumni: (c) =>
-    `They went to UCLA. Open with the UCLA connection, then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
-  recruiting: (c) => `They recruit at ${c.company}. Name the ${c.roleTitle ?? 'open'} role and ask ONE question: whether Conrad is in scope for it.`,
+    `They went to UCLA. Open with "fellow Bruin" (that already says UCLA, so never add "I'm at UCLA"), then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
+  recruiting: (c) => `They recruit at ${c.company}. End with exactly this sentence and no other question: "${recruiterAsk(c)}"`,
   gtm_leadership: (c) => `They lead GTM / sales / growth at ${c.company}. Name the ${c.roleTitle ?? 'open'} role, give the proof point, and make ONE ask.`,
   executive: (c) => `They are an executive or founder at ${c.company}. Be brief: name the ${c.roleTitle ?? 'open'} role and ask ONE thing: who the right person to talk to is.`,
   poster: (c) => `They posted the ${c.roleTitle ?? 'open'} role at ${c.company}. Name it and make ONE ask.`,
   other: (c) => `Name the ${c.roleTitle ?? 'open'} role at ${c.company} and make ONE ask.`,
 }
 
-/** The single fact block a note may use, in the owner's words. */
-export function proofFacts(p: ProofChoice): { label: string; facts: string[]; short?: string } {
+export const GRAD_LINE = 'graduating March 2027'
+export const TOOL_NAMES = /\b(clay|supabase|exa|apify)\b/i
+
+/** The one recruiter ask, word for word (owner rule). */
+export function recruiterAsk(c: Pick<DraftContext, 'roleTitle' | 'company'>): string {
+  return `Would I be in scope for the ${c.roleTitle ?? 'open'} role at ${c.company}?`
+}
+
+/** The single fact block a note may use, in the owner's words. Tool names stripped unless allowed. */
+export function proofFacts(p: ProofChoice, allowTools = true): { label: string; facts: string[]; short?: string } {
+  if (p.key === 'systems' && !allowTools) {
+    const s = PROFILE.proof.systems
+    return { label: s.label, facts: s.facts.map((f) => f.replace(/\s+with tools like [^.]+/i, '')) }
+  }
   if (p.key === 'partner_team') {
     return {
       label: `Blockchain @ UCLA worked with ${p.partner}`,
@@ -57,13 +71,13 @@ const CLUB_RULES = `Club fact rules:
 - There are no counts on record (events, attendance, members, dollars). Never state or imply a number.
 - Leave out valuations and funding rounds.`
 
-export function systemPrompt(proof: ProofChoice, limit: number): string {
-  const p = proofFacts(proof)
+export function systemPrompt(proof: ProofChoice, limit: number, allowTools = true): string {
+  const p = proofFacts(proof, allowTools)
   const club = proof.key !== 'systems'
   return `You write LinkedIn connection request notes for ${PROFILE.name}.
 
 The only facts you may use about Conrad:
-- He is at ${PROFILE.school}, graduating ${PROFILE.graduation.label}.
+- He is at ${PROFILE.school}. If you mention graduation, write exactly "${GRAD_LINE}", never another phrasing (no "finishing", "through", "class of").
 - Proof point (${p.label}):
 ${p.facts.map((f) => `  - ${f}`).join('\n')}${p.short ? `\n  Short form that fits: "${p.short}"` : ''}
 ${proof.key === 'partner_team' ? `\nThe recipient works at ${proof.partner}. Say Conrad worked with their team on a campus partnership and stop there: no details, they can check.\n` : ''}${club ? `\n${CLUB_RULES}\n` : ''}
@@ -71,6 +85,8 @@ Rules:
 - At most ${limit} characters in total. Shorter is better.
 - Plain text, first person, as Conrad. Greet by first name. No emojis, hashtags, em dashes or exclamation marks.
 - Exactly one ask and at most one question mark. Never "X, or Y?" double asks.
+- Say "Blockchain @ UCLA", never "my blockchain club".
+- Vary the proof wording and the question, not the graduation line.
 - Use only the facts above, in your own words. One proof point only. Never use project or brand names that aren't in them; describe the work instead.
 - Never invent anything: no numbers, partners, shared history, mutual connections, or claims about the recipient beyond their title. Don't say Conrad applied, admires their work, or saw a post.
 - Don't assume anything about the recipient's team, priorities or needs.
@@ -144,8 +160,18 @@ function allowedPartners(p: ProofChoice): string[] {
 }
 
 /** Problems with a draft, or [] if it passes every rule checked in code. */
-export function draftProblems(text: string, c: Pick<DraftContext, 'limit' | 'siblings' | 'proof'>): string[] {
+export function draftProblems(
+  text: string,
+  c: Pick<DraftContext, 'limit' | 'siblings' | 'proof'> & Partial<Pick<DraftContext, 'branch' | 'allowTools' | 'roleTitle' | 'company'>>
+): string[] {
   const problems: string[] = []
+  if (/march 2027/i.test(text) && !/graduating march 2027/i.test(text)) problems.push(`Write the graduation line exactly as "${GRAD_LINE}".`)
+  if (/\bblockchain club\b/i.test(text)) problems.push('Say "Blockchain @ UCLA", not "my blockchain club".')
+  if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader; describe the work plainly.')
+  if ((c.branch === 'alumni' || c.branch === 'blockchain_ucla') && /\b(i'?m|i am)\s+(a\s+\w+\s+)?at ucla\b/i.test(text))
+    problems.push('"fellow Bruin" already says UCLA; drop "I\'m at UCLA".')
+  if (c.branch === 'recruiting' && c.company && !text.includes(recruiterAsk({ roleTitle: c.roleTitle ?? null, company: c.company })))
+    problems.push(`End with exactly: "${recruiterAsk({ roleTitle: c.roleTitle ?? null, company: c.company })}"`)
   if (text.length > c.limit) problems.push(`It is ${text.length} characters; the limit is ${c.limit}.`)
   if (INTERNAL_NAMES.test(text)) problems.push('It uses an internal project name; describe the work instead.')
   if ((text.match(/\?/g) ?? []).length > 1) problems.push('It asks more than one question; keep exactly one ask.')

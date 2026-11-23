@@ -4,7 +4,7 @@ import { generateDraft, type DraftClient } from './generate'
 import { firstName, type DraftContext } from './prompt'
 import { chooseProof } from './proof'
 import { loadCompany } from '@/lib/people/run'
-import { functionScore } from '@/lib/people/targets'
+import { functionScore, TITLES } from '@/lib/people/targets'
 import { trackOf } from '@/lib/jobs/categories'
 
 /** Drafting was skipped on purpose (fit flags, poor fit). Not an error. */
@@ -52,6 +52,9 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     company: p.company,
     roleTitle: extra?.title ?? null,
     mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,
+    allowTools:
+      (p.branch === 'recruiting' && TITLES.technicalRecruiting.test(p.title ?? '')) ||
+      ((p.branch === 'alumni' || p.branch === 'blockchain_ucla') && /engineer|developer|\bdata\b|software/i.test(p.title ?? '')),
     proof,
     siblings: (sibs ?? []).map((s) => s.draft as string),
     limit: PROFILE.noteLimit,
