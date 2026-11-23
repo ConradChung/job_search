@@ -5,16 +5,35 @@
  * numbers, partners or shared history). Fit flags read `constraints`.
  */
 
-export type ProofKey = 'systems' | 'club'
+/** systems = GTM systems work; the others are single Blockchain @ UCLA facts (one per note). */
+export type ProofKey = 'systems' | 'kalshi' | 'coinbase' | 'events' | 'partner_team'
 
 export const PROFILE = {
   name: 'Conrad Chung',
   school: 'UCLA',
   graduation: { label: 'March 2027', date: '2027-03-01' },
 
+  /** Blockchain @ UCLA: Head of Growth and Partnerships, October 2023 to present. Drafts name the partner, not the title. */
+  club: {
+    name: 'Blockchain @ UCLA',
+    role: 'Head of Growth and Partnerships, October 2023 to present',
+    /** Partner companies (normalized names). Writing to someone at one of these outranks every other proof point. */
+    partners: {
+      kalshi: { name: 'Kalshi', proof: 'partner_team' },
+      coinbase: { name: 'Coinbase', proof: 'partner_team' },
+      a16z: { name: 'a16z', proof: 'events', aliases: ['andreessen horowitz'] },
+      uniswap: { name: 'Uniswap', proof: 'events', aliases: ['uniswap labs'] },
+      deloitte: { name: 'Deloitte', proof: 'events' },
+      aptos: { name: 'Aptos', proof: 'events', aliases: ['aptos labs', 'aptos foundation'] },
+      zksync: { name: 'ZKsync', proof: 'events', aliases: ['matter labs'] },
+      wave: { name: 'Wave Digital Assets', proof: 'events', aliases: ['wave digital assets'] },
+    },
+  },
+
   /**
-   * Proof points. A draft uses exactly one, chosen in code by role category
-   * and company (lib/drafts/proof.ts). Never both in one note.
+   * Proof points. A draft uses exactly one, chosen in code (lib/drafts/proof.ts).
+   * Club facts: owner's words, do not embellish. No counts exist on record
+   * (events, attendance, members, dollars): never state or imply one.
    */
   proof: {
     systems: {
@@ -25,15 +44,27 @@ export const PROFILE = {
         'Builds outbound lead pipelines, enrichment and lead validation with tools like Clay, Exa, Apify and Supabase.',
       ],
     },
-    club: {
-      label: 'Blockchain @ UCLA',
-      facts: [
-        'Head of Growth and Partnerships at Blockchain @ UCLA since October 2023.',
-        // FILL IN (owner): two or three things you did there, with partner names and one number.
-        // Until these are filled in, club notes can only state the role above.
-      ],
+    kalshi: {
+      label: 'Blockchain @ UCLA: Kalshi partnership',
+      facts: ['Sourced and closed a campus partnership with Kalshi, negotiating scope and terms directly with their head of growth in New York.'],
+      short: "sourced and closed Blockchain @ UCLA's partnership with Kalshi",
     },
-  } satisfies Record<ProofKey, { label: string; facts: string[] }>,
+    coinbase: {
+      label: 'Blockchain @ UCLA: Coinbase outreach',
+      facts: ['Cold outreach to Coinbase recruiters that turned into on-campus recruiting initiatives.'],
+      short: "cold-emailed Coinbase's recruiters into an on-campus program",
+    },
+    events: {
+      label: 'Blockchain @ UCLA: events',
+      facts: ['Hosted events with a16z, Uniswap, Deloitte, Aptos, ZKsync and Wave Digital Assets.'],
+      short: 'ran events with a16z and Uniswap at Blockchain @ UCLA',
+    },
+    partner_team: {
+      label: 'Blockchain @ UCLA: worked with this team',
+      facts: ['Worked with the recipient\'s team on a campus partnership (Blockchain @ UCLA).'],
+      short: 'worked with your team on a campus partnership',
+    },
+  } satisfies Record<ProofKey, { label: string; facts: string[]; short?: string }>,
 
   constraints: {
     /** Role categories Conrad drafts for. Anything else is a blocking fit flag. */

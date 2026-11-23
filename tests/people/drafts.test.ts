@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { cleanDraft, draftProblems, firstName, INTERNAL_NAMES, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
+import { cleanDraft, draftProblems, firstName, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
-import { chooseProof } from '@/lib/drafts/proof'
+import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
 import { PROFILE } from '@/lib/profile'
 
 const ctx: DraftContext = {
@@ -11,7 +11,7 @@ const ctx: DraftContext = {
   company: 'Crexi',
   roleTitle: 'GTM Automation Engineer',
   mentionRole: true,
-  proof: 'systems',
+  proof: { key: 'systems', why: 'test' },
   siblings: [],
   limit: PROFILE.noteLimit,
 }
@@ -38,30 +38,98 @@ function fakeClient(replies: { text: string; stop?: string }[]) {
   return { client, calls }
 }
 
-describe('proof point selection (one per note)', () => {
-  it('club leads for crypto / fintech and partnerships roles', () => {
-    expect(chooseProof('gtm_eng', true)).toBe('club')
-    expect(chooseProof('partnerships_bd', false)).toBe('club')
+const base: ProofInput = {
+  company: 'Acme',
+  category: 'gtm_eng',
+  cryptoOrFintech: false,
+  context: 'Software Development',
+  roleTitle: 'GTM Engineer',
+  branch: 'recruiting',
+  siblingCount: 0,
+}
+const pick = (over: Partial<ProofInput>) => chooseProof({ ...base, ...over })
+
+describe('proof point selection (owner rules 2026-11-23)', () => {
+  it('partner companies outrank everything', () => {
+    expect(pick({ company: 'Kalshi', category: 'growth_eng_product' })).toMatchObject({ key: 'partner_team', partner: 'Kalshi' })
+    expect(pick({ company: 'Coinbase' })).toMatchObject({ key: 'partner_team', partner: 'Coinbase' })
+    expect(pick({ company: 'Uniswap Labs' })).toMatchObject({ key: 'events', partner: 'Uniswap' })
+    expect(pick({ company: 'Matter Labs' })).toMatchObject({ key: 'events', partner: 'ZKsync' })
+    expect(partnerOf('Kalshi Inc.')?.name).toBe('Kalshi')
+    expect(partnerOf('Coinbase Wallet Builders')?.name).toBe('Coinbase')
+    expect(partnerOf('Deloittex')).toBeNull()
   })
-  it('systems for GTM Eng, RevOps and sales; club only when systems does not fit', () => {
-    expect(chooseProof('gtm_eng', false)).toBe('systems')
-    expect(chooseProof('revops', false)).toBe('systems')
-    expect(chooseProof('marketing', false)).toBe('club')
+  it('crypto → Coinbase; fintech and prediction markets → Kalshi', () => {
+    expect(pick({ cryptoOrFintech: true, context: 'Building stablecoin payments on-chain' })?.key).toBe('coinbase')
+    expect(pick({ cryptoOrFintech: true, context: 'Embedded banking for credit unions' })?.key).toBe('kalshi')
+    expect(pick({ context: 'The leading prediction market exchange' })?.key).toBe('kalshi')
+  })
+  it('AI "tokens" in a posting do not make a company crypto', () => {
+    expect(pick({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('systems')
+  })
+  it('partnerships / BD and founding GTM roles → Kalshi', () => {
+    expect(pick({ category: 'partnerships_bd', roleTitle: 'Partnerships Lead' })?.key).toBe('kalshi')
+    expect(pick({ roleTitle: 'Founding GTM Engineer' })?.key).toBe('kalshi')
+    expect(pick({ category: 'sales', roleTitle: 'Founding Account Executive' })?.key).toBe('kalshi')
+  })
+  it('GTM Eng elsewhere: systems first, Coinbase only to vary a second note', () => {
+    expect(pick({})?.key).toBe('systems')
+    expect(pick({ siblingCount: 1 })?.key).toBe('coinbase')
+    expect(pick({ siblingCount: 2 })?.key).toBe('systems')
+  })
+  it('Blockchain @ UCLA alumni: club opener, systems when it fits', () => {
+    expect(pick({ branch: 'blockchain_ucla', roleTitle: 'Founding GTM Engineer' })?.key).toBe('systems')
   })
   it('poor fit when nothing matches (ElevenLabs product growth role)', () => {
-    expect(chooseProof('growth_eng_product', false)).toBeNull()
-    expect(chooseProof('engineering', false)).toBeNull()
+    expect(pick({ company: 'ElevenLabs', category: 'growth_eng_product', roleTitle: 'Website Growth Engineer' })).toBeNull()
+    expect(pick({ category: 'engineering' })).toBeNull()
+    expect(pick({ category: 'marketing' })).toBeNull()
   })
-  it('the system prompt carries only the chosen proof point', () => {
-    const sys = systemPrompt('systems', 250)
+})
+
+describe('fact blocks (one per note, owner wording)', () => {
+  it('systems prompt has no club facts; club prompts have exactly one club fact and the club rules', () => {
+    const sys = systemPrompt({ key: 'systems', why: '' }, 250)
     for (const f of PROFILE.proof.systems.facts) expect(sys).toContain(f)
-    for (const f of PROFILE.proof.club.facts) expect(sys).not.toContain(f)
-    expect(systemPrompt('club', 250)).toContain('Blockchain @ UCLA')
+    expect(sys).not.toMatch(/Kalshi|Coinbase|Uniswap/)
+    const k = systemPrompt({ key: 'kalshi', why: '' }, 250)
+    expect(k).toContain('Sourced and closed a campus partnership with Kalshi, negotiating scope and terms directly with their head of growth in New York.')
+    expect(k).not.toMatch(/Coinbase|Built and shipped/)
+    expect(k).toMatch(/Never call partners clients or customers/)
+    expect(k).toMatch(/There are no counts on record/)
     expect(sys).toContain('At most 250 characters')
   })
+  it('writing to Kalshi / Coinbase: "worked with your team on a campus partnership" and stop', () => {
+    const f = proofFacts({ key: 'partner_team', partner: 'Coinbase', why: '' })
+    expect(f.short).toBe('worked with your team on a campus partnership')
+    expect(systemPrompt({ key: 'partner_team', partner: 'Coinbase', why: '' }, 250)).toMatch(/stop there/)
+  })
+  it('event partner names only that partner', () => {
+    expect(proofFacts({ key: 'events', partner: 'Deloitte', why: '' }).facts[0]).toBe('Hosted events with Deloitte at Blockchain @ UCLA.')
+  })
+  it('the club title is not offered as a fact', () => {
+    expect(systemPrompt({ key: 'kalshi', why: '' }, 250)).not.toMatch(/Head of Growth and Partnerships/)
+  })
   it('no internal names anywhere in the profile', () => {
-    const all = JSON.stringify(PROFILE)
-    expect(INTERNAL_NAMES.test(all)).toBe(false)
+    expect(INTERNAL_NAMES.test(JSON.stringify(PROFILE))).toBe(false)
+  })
+})
+
+describe('club claims checked in code', () => {
+  const kalshi = { ...ctx, proof: { key: 'kalshi' as const, why: '' } }
+  it('counts, dollars, clients, revenue, valuations, title, working at a partner', () => {
+    expect(draftProblems('I ran 12 events with Kalshi.', kalshi).join()).toMatch(/count/)
+    expect(draftProblems('Closed a $5k Kalshi deal.', kalshi).join()).toMatch(/count or dollar/)
+    expect(draftProblems('Kalshi was a club client.', kalshi).join()).toMatch(/not clients/)
+    expect(draftProblems('The Kalshi deal brought revenue.', kalshi).join()).toMatch(/revenue/)
+    expect(draftProblems("I'm Head of Growth at Blockchain @ UCLA and closed Kalshi.", kalshi).join()).toMatch(/not Conrad's title/)
+    expect(draftProblems('I worked at Kalshi on growth.', kalshi).join()).toMatch(/worked at a partner/)
+    expect(draftProblems('Closed our Kalshi partnership with their head of growth.', kalshi)).toEqual([])
+  })
+  it('a second proof point is caught', () => {
+    expect(draftProblems("Closed our Kalshi partnership and cold-emailed Coinbase's recruiters.", kalshi).join()).toMatch(/second proof point/)
+    expect(draftProblems('I built a GTM platform solo; also closed Kalshi.', ctx).join()).toMatch(/second proof point/)
+    expect(draftProblems("Hi Sam, I sourced and closed Blockchain @ UCLA's partnership with Kalshi. Am I in scope?", kalshi)).toEqual([])
   })
 })
 

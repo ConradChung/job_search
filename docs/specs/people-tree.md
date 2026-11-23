@@ -238,3 +238,13 @@ outbound proof points, though it is a product engineering role (CRO, SEO, progra
   fintech / partnerships, systems for GTM / RevOps / sales, poor fit = no draft); no internal names; one ask;
   alumni get a question about their team; recruiters "am I in scope"; siblings differ (checked in code); note
   limit 250 from config.
+
+## Blockchain @ UCLA proof points (owner, 2026-11-23)
+
+Facts in `lib/profile.ts` (owner's words): Kalshi partnership sourced and closed; Coinbase cold outreach that turned
+into on-campus recruiting; events with a16z, Uniswap, Deloitte, Aptos, ZKsync, Wave Digital Assets. No counts exist.
+Selection (`lib/drafts/proof.ts`): partner company → that relationship ("worked with your team on a campus
+partnership" for Kalshi / Coinbase); Blockchain @ UCLA alumni → club opener, systems when it fits; prediction market /
+fintech → Kalshi, crypto → Coinbase; partnerships/BD or founding GTM → Kalshi; GTM Eng → systems first, Coinbase only
+to vary a second note at the same company. One fact per note; code rejects counts, dollars, clients/customers,
+revenue, valuations, Conrad's title, "worked at" a partner, or a second proof point.

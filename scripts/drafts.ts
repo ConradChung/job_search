@@ -84,7 +84,7 @@ async function main() {
       const r = await draftForPerson(db, client, p.id)
       spent += r.cost
       console.log(
-        `\n[${p.company}] ${p.full_name} (${p.branch}) ${r.text.length} chars $${r.cost.toFixed(4)} [${r.proof}]${r.problems.length ? ` PROBLEMS: ${r.problems.join(' ')}` : ''}\n${r.text}`
+        `\n[${p.company}] ${p.full_name} (${p.branch}) ${r.text.length} chars $${r.cost.toFixed(4)} [${r.proof.key}${r.proof.partner ? `:${r.proof.partner}` : ''}]${r.problems.length ? ` PROBLEMS: ${r.problems.join(' ')}` : ''}\n${r.text}`
       )
     } catch (err) {
       if (err instanceof DraftSkipped) {

@@ -83,14 +83,14 @@ describe('regression cases: category → routing chain → fit flags → draftin
       expect(ruleFor(track, sizeBand(c.employees))).toMatch(c.expectRule)
       const fit = companyFit([job(c)])
       expect(fit.canDraft).toBe(c.drafts)
-      if (c.drafts) expect(chooseProof(c.category, false)).toBe('systems')
+      if (c.drafts) expect(chooseProof({ company: 'Formic', category: c.category, cryptoOrFintech: false, context: '', roleTitle: 'GTM Engineer', branch: 'recruiting', siblingCount: 0 })?.key).toBe('systems')
     })
   }
 
   it('ElevenLabs: blocked as not GTM Eng, no proof point matches, override still finds no proof', () => {
     const flags = fitFlags(job(CASES[0]))
     expect(flags.find((f) => f.code === 'category')).toMatchObject({ level: 'block', message: 'Category is Growth Eng (product), not GTM Eng' })
-    expect(chooseProof('growth_eng_product', false)).toBeNull()
+    expect(chooseProof({ company: 'ElevenLabs', category: 'growth_eng_product', cryptoOrFintech: false, context: '', roleTitle: 'Website Growth Engineer', branch: 'alumni', siblingCount: 0 })).toBeNull()
     expect(companyFit([job(CASES[0])], true).canDraft).toBe(true) // override lifts the fit gate…
     // …but drafting still stops at the proof step (lib/drafts/run.ts) as a poor fit.
   })
