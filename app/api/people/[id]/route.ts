@@ -4,6 +4,7 @@ import { requireOwner } from '@/lib/auth/requireOwner'
 import { createServiceClient } from '@/lib/supabase/service'
 import { OUTREACH_VALUES, PERSON_COLUMNS } from '@/lib/people/types'
 import { noteProblems } from '@/lib/drafts/check'
+import { draftWarnings } from '@/lib/drafts/prompt'
 
 const Patch = z
   .object({
@@ -28,7 +29,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data, error } = await db.from('people').update(parsed.data).eq('id', id).select(PERSON_COLUMNS).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'not found' }, { status: 404 })
-  return NextResponse.json(data)
+  // Soft limit: saved, but flagged.
+  return NextResponse.json({ ...data, ...(parsed.data.draft ? { warnings: draftWarnings(parsed.data.draft) } : {}) })
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {

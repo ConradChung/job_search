@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { noteProblems } from '@/lib/drafts/check'
 import { refreshRecruiterFollowups } from '@/lib/drafts/recruiterFollowups'
 import { loadCompany } from '@/lib/people/run'
+import { draftWarnings } from '@/lib/drafts/prompt'
 import { idempotencyKey } from '../idempotency'
 import { McpUserError } from '../sanitize'
 import { defineTool, INTERNAL_APPEND, INTERNAL_WRITE, type ToolDef } from '../tool'
@@ -97,7 +98,7 @@ export function makeWriteTools(deps: WriteDeps = writeDeps): ToolDef[] {
       if (problems.length) throw new McpUserError(`Not approved; the note fails the checks: ${problems.join(' ')}`)
       const { error } = await db.from('people').update({ outreach_status: 'approved' }).eq('id', person_id).eq('outreach_status', 'drafted')
       if (error) throw new Error(error.message)
-      return { data: { person_id, status: 'approved' }, refs: { person: String(person_id) } }
+      return { data: { person_id, status: 'approved', warnings: draftWarnings(p.draft) }, refs: { person: String(person_id) } }
     },
   })
 
@@ -119,7 +120,7 @@ export function makeWriteTools(deps: WriteDeps = writeDeps): ToolDef[] {
       const status = p.outreach_status === 'none' ? 'drafted' : p.outreach_status === 'approved' ? 'drafted' : p.outreach_status
       const { error } = await db.from('people').update({ draft: text, outreach_status: status }).eq('id', person_id)
       if (error) throw new Error(error.message)
-      return { data: { person_id, status, length: text.length }, refs: { person: String(person_id) } }
+      return { data: { person_id, status, length: text.length, warnings: draftWarnings(text) }, refs: { person: String(person_id) } }
     },
   })
 

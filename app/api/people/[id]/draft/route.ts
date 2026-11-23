@@ -4,6 +4,7 @@ import { requireOwner } from '@/lib/auth/requireOwner'
 import { createServiceClient } from '@/lib/supabase/service'
 import { DraftSkipped, draftForPerson } from '@/lib/drafts/run'
 import { PERSON_COLUMNS } from '@/lib/people/types'
+import { draftWarnings } from '@/lib/drafts/prompt'
 
 export const maxDuration = 60
 
@@ -16,7 +17,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   try {
     const r = await draftForPerson(db, new Anthropic(), id)
     const { data } = await db.from('people').select(PERSON_COLUMNS).eq('id', id).single()
-    return NextResponse.json({ person: data, cost: r.cost, problems: r.problems, proof: r.proof })
+    return NextResponse.json({ person: data, cost: r.cost, problems: r.problems, warnings: draftWarnings(r.text), proof: r.proof })
   } catch (err) {
     if (err instanceof DraftSkipped) return NextResponse.json({ skipped: true, error: `Not drafted: ${err.message}` }, { status: 409 })
     if (err instanceof Anthropic.RateLimitError) return NextResponse.json({ error: 'Claude rate limit, try again shortly' }, { status: 429 })

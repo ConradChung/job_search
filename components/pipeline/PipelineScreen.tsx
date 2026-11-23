@@ -218,7 +218,7 @@ export function PipelineScreen({ initial, openKey, actions = [] }: { initial: Co
       return false
     }
     patchPerson(c.key, p.id, body.person)
-    if (!quiet && body.tooLong) toast.warning(`Draft is over ${PROFILE.noteLimit} characters; trim it before sending.`)
+    if (!quiet && body.warnings?.length) toast.warning(`${p.full_name}: ${body.warnings.join(' ')}`)
     return true
   }
 
@@ -271,7 +271,11 @@ export function PipelineScreen({ initial, openKey, actions = [] }: { initial: Co
       const body = await res?.json().catch(() => null)
       return toast.error(body?.problems ? 'Not saved: the note fails the checks.' : 'Could not save the draft.', { description: body?.problems?.join('\n'), duration: 12000 })
     }
-    patchPerson(c.key, p.id, await res.json())
+    const saved = await res.json()
+    if (saved.warnings?.length) toast.warning(saved.warnings.join(' '))
+    const { warnings: _w, ...person } = saved
+    void _w
+    patchPerson(c.key, p.id, person)
   }
 
   async function findPeople(list: CompanyView[]) {
@@ -1147,8 +1151,11 @@ function DraftBox({
         <p className={cn('text-[12px] leading-relaxed whitespace-pre-wrap text-fg-70', busy && 'opacity-50')}>{draft}</p>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        <span className={cn('mr-auto font-mono text-[10px] tabular-nums', len > PROFILE.noteLimit ? 'text-red' : 'text-fg-46')}>
-          {len}/{PROFILE.noteLimit}
+        <span
+          className={cn('mr-auto font-mono text-[10px] tabular-nums', len > PROFILE.noteLimit ? 'text-red' : len > PROFILE.noteSoftLimit ? 'text-amber' : 'text-fg-46')}
+          title={`Aim for ${PROFILE.noteSoftLimit} or fewer; over ${PROFILE.noteLimit} is blocked`}
+        >
+          {len}/{len > PROFILE.noteSoftLimit ? PROFILE.noteLimit : PROFILE.noteSoftLimit}
         </span>
         {editing ? (
           <>

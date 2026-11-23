@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
+import { cleanDraft, draftProblems, draftWarnings, firstName, hasMetric, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
 import { draftTargetIds, leaderScore, topLeader } from '@/lib/drafts/targets'
@@ -104,7 +104,7 @@ describe('fact blocks (one per note, owner wording)', () => {
     expect(k).not.toMatch(/Coinbase|Built and shipped/)
     expect(k).toMatch(/Never call partners clients or customers/)
     expect(k).toMatch(/There are no counts on record/)
-    expect(sys).toContain('At most 250 characters')
+    expect(sys).toContain('never more than 250 in total')
   })
   it('writing to Kalshi / Coinbase: "worked with your team on a campus partnership" and stop', () => {
     const f = proofFacts({ key: 'partner_team', partner: 'Coinbase', why: '' })
@@ -158,7 +158,7 @@ describe('angles', () => {
 
 describe('code-checked rules', () => {
   it('flags length, internal names, double asks and sibling overlap', () => {
-    expect(draftProblems('x'.repeat(210), ctx)[0]).toMatch(/limit is 200/)
+    expect(draftProblems('x'.repeat(260), ctx)[0]).toMatch(/It is 260 characters; the limit is 250/)
     expect(draftProblems('I built Lume, my outbound tool.', ctx)[0]).toMatch(/internal project name/)
     expect(draftProblems('Open to a quick chat? Or know who to ask?', ctx)[0]).toMatch(/more than one question/)
     const a = 'Hi Gabe, fellow Bruin here. I build GTM systems end to end, including my own outbound command center. Would you be up for a quick chat?'
@@ -209,7 +209,7 @@ describe('note rules (owner, 2026-11-23 review)', () => {
   it('recruiter note shape: grad line, one proof, role line, "Open to connecting?"', () => {
     expect(recruiterClose(rec)).toBe('Interested in the GTM Automation Engineer role at Crexi. Open to connecting?')
     const good = "Hi Daniella, I'm Conrad at UCLA, graduating March 2027. I build outbound lead pipelines for two startups I co-founded. Interested in the GTM Automation Engineer role at Crexi. Open to connecting?"
-    expect(good.length).toBeLessThanOrEqual(200)
+    expect(good.length).toBeLessThanOrEqual(PROFILE.noteSoftLimit)
     expect(draftProblems(good, rec)).toEqual([])
     expect(draftProblems("Hi Dana, I'm Conrad at UCLA, graduating March 2027. Would I be in scope for the GTM Automation Engineer role at Crexi?", rec).join()).toMatch(/End with exactly/)
     expect(draftProblems("Hi Dana, I'm Conrad at UCLA, graduating March 2027. I cold-emailed Coinbase's recruiters. Interested in the GTM Automation Engineer role at Crexi. Open to connecting?", rec).join()).toMatch(/Coinbase/)
@@ -274,7 +274,7 @@ describe('SDR: sales leader / founder as drafting target (owner, 2026-11-24)', (
     expect(chooseProof(base)?.key).toBe('sdr')
   })
   it('leader notes use the recruiter shape; the after-accept message asks who to talk to', () => {
-    const c = { limit: 200, siblings: [], proof: { key: 'sdr' as const, why: '' }, branch: 'executive' as const, sdrLeader: true, roleTitle: 'SDR', company: 'Acme', allowTools: false }
+    const c = { limit: PROFILE.noteLimit, siblings: [], proof: { key: 'sdr' as const, why: '' }, branch: 'executive' as const, sdrLeader: true, roleTitle: 'SDR', company: 'Acme', allowTools: false }
     const ok = `Hi Ann, I'm Conrad at UCLA, graduating March 2027. I do my own prospecting for two startups I co-founded. ${recruiterClose(c)}`
     expect(draftProblems(ok, c)).toEqual([])
     expect(draftProblems('Hi Ann, who should I talk to about the SDR role?', c).join()).toMatch(/End with exactly/)
@@ -320,7 +320,7 @@ describe('SDR fixes (owner, 2026-11-24)', () => {
     expect(chooseProof({ ...base, branch: 'alumni', siblingTexts: ['Kalshi partnership'] })?.key).toBe('coinbase')
   })
   it('Kalshi wording is "sourced and closed"', () => {
-    const c = { limit: 200, siblings: [], proof: { key: 'kalshi' as const, why: '' }, branch: 'alumni' as const }
+    const c = { limit: PROFILE.noteLimit, siblings: [], proof: { key: 'kalshi' as const, why: '' }, branch: 'alumni' as const }
     expect(draftProblems("Hi Ann, fellow Bruin here. I won Blockchain @ UCLA's Kalshi partnership. How do SDRs ramp?", c).join()).toMatch(/sourced and closed/)
     expect(draftProblems("Hi Ann, fellow Bruin here. I sourced and closed Blockchain @ UCLA's partnership with Kalshi. How do SDRs ramp?", c)).toEqual([])
   })
@@ -349,5 +349,31 @@ describe('recruiter after-accept template (owner, 2026-11-24)', () => {
     const note = 'Hi Ann, I built and shipped a full-stack GTM platform solo.'
     expect(recruiterProofLine(note, false, true)).toMatch(/Clay, Exa, Apify and Supabase/)
     expect(recruiterProofLine(note, false, false)).not.toMatch(TOOL_NAMES)
+  })
+})
+
+describe('note length: hard limit 250 blocks, soft limit 230 warns (owner, 2026-11-23)', () => {
+  const c = { limit: PROFILE.noteLimit, siblings: [], proof: { key: 'systems' as const, why: '' } }
+  const lengthProblem = (n: number) => draftProblems('x'.repeat(n), c).some((p) => /characters; the limit is/.test(p))
+
+  it('the limits are 250 and 230', () => {
+    expect(PROFILE.noteLimit).toBe(250)
+    expect(PROFILE.noteSoftLimit).toBe(230)
+  })
+  it('over 250 is a problem (blocks); 250 itself is allowed', () => {
+    expect(lengthProblem(251)).toBe(true)
+    expect(lengthProblem(250)).toBe(false)
+    expect(lengthProblem(231)).toBe(false)
+  })
+  it('231 to 250 only warns; 230 and under is clean; over 250 is not a warning but a problem', () => {
+    expect(draftWarnings('x'.repeat(230))).toEqual([])
+    expect(draftWarnings('x'.repeat(231))[0]).toMatch(/231 characters; aim for 230 or fewer \(the hard limit is 250\)/)
+    expect(draftWarnings('x'.repeat(250))).toHaveLength(1)
+    expect(draftWarnings('x'.repeat(251))).toEqual([])
+  })
+  it('the drafting prompt aims for 230 and never over 250', () => {
+    const sys = systemPrompt({ key: 'systems', why: '' }, PROFILE.noteLimit)
+    expect(sys).toMatch(/Aim for 230 characters or fewer; never more than 250 in total/)
+    expect(sys).not.toMatch(/\b200\b/)
   })
 })

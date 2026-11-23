@@ -125,6 +125,11 @@ export const PROFILE = {
     earliestStart: '2027-03-01',
   },
 
-  /** LinkedIn connection notes: hard character limit used by the generator and the counter. */
-  noteLimit: 200,
+  /**
+   * LinkedIn connection notes (owner, 2026-11-23). Hard limit: a note over it
+   * is blocked (code check, approve, export). Soft limit: over it only warns;
+   * the generator aims to stay under it.
+   */
+  noteLimit: 250,
+  noteSoftLimit: 230,
 } as const

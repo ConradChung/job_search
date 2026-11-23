@@ -110,7 +110,7 @@ const CLUB_RULES = `Club fact rules:
 - There are no counts on record (events, attendance, members, dollars). Never state or imply a number.
 - Leave out valuations and funding rounds.`
 
-export function systemPrompt(proof: ProofChoice, limit: number, allowTools = true): string {
+export function systemPrompt(proof: ProofChoice, limit: number, allowTools = true, softLimit: number = PROFILE.noteSoftLimit): string {
   const p = proofFacts(proof, allowTools)
   const club = proof.key !== 'systems'
   return `You write LinkedIn connection request notes for ${PROFILE.name}.
@@ -121,7 +121,7 @@ The only facts you may use about Conrad:
 ${p.facts.map((f) => `  - ${f}`).join('\n')}${p.short ? `\n  Short form that fits: "${p.short}"` : ''}
 ${proof.key === 'partner_team' ? `\nThe recipient works at ${proof.partner}. Say Conrad worked with their team on a campus partnership and stop there: no details, they can check.\n` : ''}${club ? `\n${CLUB_RULES}\n` : ''}
 Rules:
-- At most ${limit} characters in total. Shorter is better. Use the short form of the proof point and cut its second clause first (e.g. drop "working out terms with their head of growth").
+- Aim for ${Math.min(softLimit, limit)} characters or fewer; never more than ${limit} in total. Shorter is better. Use the short form of the proof point and cut its second clause first (e.g. drop "working out terms with their head of growth").
 - Plain text, first person, as Conrad. Greet by first name. No emojis, hashtags, em dashes or exclamation marks.
 - Exactly one ask and at most one question mark. Never "X, or Y?" double asks.
 - No frequency or volume claims ("every week", "daily", "hundreds", "a lot of").
@@ -197,6 +197,15 @@ function allowedPartners(p: ProofChoice): string[] {
   if (p.key === 'events') return p.partner ? [p.partner.toLowerCase()] : ['a16z', 'andreessen', 'uniswap', 'deloitte', 'aptos', 'zksync', 'wave digital']
   if (p.key === 'partner_team') return [p.partner!.toLowerCase()]
   return []
+}
+
+/**
+ * Soft limit (owner, 2026-11-23): a note between the soft and hard limits is
+ * allowed but flagged. Over the hard limit is a problem (draftProblems), not a warning.
+ */
+export function draftWarnings(text: string, soft: number = PROFILE.noteSoftLimit, hard: number = PROFILE.noteLimit): string[] {
+  const n = text.trim().length
+  return n > soft && n <= hard ? [`It is ${n} characters; aim for ${soft} or fewer (the hard limit is ${hard}).`] : []
 }
 
 /** Problems with a draft, or [] if it passes every rule checked in code. */

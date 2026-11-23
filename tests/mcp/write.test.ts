@@ -58,10 +58,10 @@ const p = (o: Record<string, unknown> = {}) => ({ id: 1, company_key: 'acme', co
 
 describe('edit_note runs the page checks', () => {
   it('rejects an edit that fails a check, and writes nothing', async () => {
-    const s = setup([p()], ['It is 214 characters; the limit is 200.'])
-    const r = await s.call('jobhunt_edit_note', { person_id: 1, note: 'x'.repeat(214) })
+    const s = setup([p()], ['It is 260 characters; the limit is 250.'])
+    const r = await s.call('jobhunt_edit_note', { person_id: 1, note: 'x'.repeat(260) })
     expect(r.error).toBe(true)
-    expect(r.text).toMatch(/fails the checks: It is 214 characters/)
+    expect(r.text).toMatch(/fails the checks: It is 260 characters/)
     expect(s.db.writes).toHaveLength(0)
   })
   it('saves a passing edit; an edited Approved note goes back to Drafted', async () => {
@@ -70,6 +70,12 @@ describe('edit_note runs the page checks', () => {
     expect(r.error).toBe(false)
     expect(s.check).toHaveBeenCalledWith(expect.anything(), 1, 'Hi Ann, new text')
     expect(s.db.writes[0].patch).toEqual({ draft: 'Hi Ann, new text', outreach_status: 'drafted' })
+  })
+  it('a note between 230 and 250 characters is saved with a warning, not blocked', async () => {
+    const s = setup([p()])
+    const r = await s.call('jobhunt_edit_note', { person_id: 1, note: 'x'.repeat(240) })
+    expect(r.error).toBe(false)
+    expect(JSON.parse(r.text).warnings[0]).toMatch(/240 characters; aim for 230 or fewer/)
   })
   it('refuses once the note is in a sender file', async () => {
     for (const status of ['exported', 'sent', 'replied']) {
