@@ -1,11 +1,20 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { PROFILE } from '@/lib/profile'
 import { generateDraft, generateFollowup, type DraftClient } from './generate'
-import { firstName, type DraftContext } from './prompt'
+import { firstName, shortSdrTitle, type DraftContext } from './prompt'
+import { companyFit, isSdr } from '@/lib/jobs/fit'
 import { chooseProof } from './proof'
 import { loadCompany } from '@/lib/people/run'
 import { functionScore, TITLES } from '@/lib/people/targets'
 import { trackOf } from '@/lib/jobs/categories'
+
+/** SDR / BDR roles go in notes as "SDR" / "BDR" (a qualifier only when the company has several). */
+function noteRoleTitle(fit: ReturnType<typeof companyFit>, title: string | null): string | null {
+  const role = fit.primary
+  if (!title || !role || !isSdr(role)) return title
+  const others = fit.ranked.filter((r) => r.role.id !== role.id && isSdr(r.role) && r.role.liveness !== 'dead').map((r) => r.role.title ?? '')
+  return shortSdrTitle(title, others)
+}
 
 /** Drafting was skipped on purpose (fit flags, poor fit). Not an error. */
 export class DraftSkipped extends Error {}
@@ -52,7 +61,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     title: p.title,
     branch: p.branch,
     company: p.company,
-    roleTitle: extra?.title ?? null,
+    roleTitle: noteRoleTitle(fit, extra?.title ?? null),
     roleStatus: extra?.status ?? null,
     sdrLeader: fit.track === 'sdr' && (p.branch === 'gtm_leadership' || p.branch === 'executive'),
     mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,

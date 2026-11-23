@@ -118,6 +118,8 @@ export const PROFILE = {
     staffingPattern:
       '^(tenth revolution|ladders|fde times|robert half|jobot|insight global|teksystems|randstad|adecco|kforce|motion recruitment|hays|michael page|harnham|talentful|cybercoders|aerotek|kelly services|manpower|apex systems|vaco|beacon hill|lhh|hirewell|betts|bowen|frank recruitment|jefferson frank|nigel frank|mason frank|treehouse|underdog\\.io)\\b',
     staffingIndustry: '\\bstaffing\\b',
+    /** GTM agencies (owner, 2026-11-24): pass, with an "agency" warning (the role sells for their clients). */
+    agencyPattern: '^(demanddrive|the revenue architects)\\b',
     /** Earliest start Conrad can do (graduates March 2027). */
     earliestStart: '2027-03-01',
   },

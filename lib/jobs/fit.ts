@@ -22,7 +22,7 @@ export interface FitInput {
 }
 
 export interface FitFlag {
-  code: 'category' | 'seniority' | 'location' | 'start' | 'unclassified' | 'dead' | 'staffing'
+  code: 'category' | 'seniority' | 'location' | 'start' | 'unclassified' | 'dead' | 'staffing' | 'agency'
   /** block: drafting is skipped until the owner overrides. warn: shown, still drafts. info: shown only. */
   level: 'block' | 'warn' | 'info'
   message: string
@@ -40,6 +40,7 @@ type Constraints = {
   earliestStart: string
   staffingPattern?: string
   staffingIndustry?: string
+  agencyPattern?: string
 }
 
 const US = /\b(united states|usa|u\.s\.?a?\.?|us|remote|anywhere)\b/i
@@ -95,6 +96,8 @@ export function fitFlags(job: FitInput, c: Constraints = PROFILE.constraints): F
   const flags: FitFlag[] = []
   if (job.liveness === 'dead') flags.push({ code: 'dead', level: 'block', message: 'Posting is closed' })
   if (isStaffing(job, c)) flags.push({ code: 'staffing', level: 'block', message: 'Staffing agency or job board, not the employer' })
+  else if (c.agencyPattern && new RegExp(c.agencyPattern, 'i').test((job.company ?? '').trim()))
+    flags.push({ code: 'agency', level: 'warn', message: 'Agency: the role sells for their clients' })
 
   if (!job.category) {
     flags.push({ code: 'unclassified', level: 'block', message: 'Not classified yet' })

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { cleanDraft, draftProblems, followupProblems, followupSystemPrompt, followupUserPrompt, systemPrompt, userPrompt, type DraftContext } from './prompt'
+import { cleanDraft, draftProblems, followupProblems, leaderFollowup, followupSystemPrompt, followupUserPrompt, systemPrompt, userPrompt, type DraftContext } from './prompt'
 
 export const DRAFT_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6, cacheRead: 0.2 / 1e6, cacheWrite: 5 / 1e6 }
@@ -80,6 +80,11 @@ export async function generateDraft(client: DraftClient, ctx: DraftContext): Pro
 
 /** The after-accept message for a note, with the same check-and-retry loop. */
 export async function generateFollowup(client: DraftClient, ctx: DraftContext, note: string): Promise<DraftResult> {
+  // Founders and sales leaders at SDR companies: fixed two-sentence message, no model call.
+  if (ctx.sdrLeader) {
+    const text = leaderFollowup(ctx)
+    return { text, model: 'template', cost: 0, problems: followupProblems(text, ctx) }
+  }
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: followupUserPrompt(ctx, note) }]
   let cost = 0
   let model = DRAFT_MODEL

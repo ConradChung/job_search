@@ -314,13 +314,13 @@ describe('tracks (owner, 2026-11-23)', () => {
     expect(planFor('sales', 'large', true)).toEqual(planFor('sales', 'large'))
     expect(ruleFor('sales', 'small', true)).toMatch(/sales leader \+ founder/)
   })
-  it('SDR proof points: prospecting, then Kalshi, then Coinbase (alumni only)', () => {
+  it('SDR proof points: recruiter / leader get prospecting, the alum Kalshi, then Coinbase', () => {
     const p = (branch: string, siblingTexts: string[] = []) => chooseProof({ company: 'Acme', category: 'sdr', cryptoOrFintech: false, context: '', roleTitle: 'SDR', branch, siblingCount: siblingTexts.length, siblingTexts })?.key
     expect(p('recruiting')).toBe('sdr')
-    expect(p('alumni')).toBe('sdr')
+    expect(p('recruiting', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('sdr')
+    expect(p('alumni')).toBe('kalshi')
     expect(p('alumni', ['I do my own prospecting…'])).toBe('kalshi')
-    expect(p('alumni', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('coinbase')
-    expect(p('recruiting', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('kalshi')
+    expect(p('alumni', ['Kalshi partnership'])).toBe('coinbase')
   })
 })
 
@@ -335,6 +335,13 @@ describe('staffing agencies block (owner, 2026-11-24)', () => {
   })
   it("blocks LinkedIn's Staffing and Recruiting industry", () => {
     expect(isStaffing({ company: 'Someco', industries: 'Staffing and Recruiting' })).toBe(true)
+  })
+  it('GTM agencies pass with an agency warning', () => {
+    for (const company of ['demandDrive', 'The Revenue Architects']) {
+      const f = fitFlags({ ...base, company })
+      expect(f.find((x) => x.code === 'agency')?.level).toBe('warn')
+      expect(blocks(f)).toBe(false)
+    }
   })
   it('leaves product companies alone', () => {
     for (const company of ['Engine', 'Handshake', 'demandDrive', 'Landed', 'Haystack Labs']) {

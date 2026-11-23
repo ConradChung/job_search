@@ -73,13 +73,13 @@ export function chooseProof(i: ProofInput): ProofChoice | null {
   // SDR / BDR roles (owner, 2026-11-23): (1) own prospecting, (2) Kalshi, (3) Coinbase, alumni only.
   // The next one is used when a colleague's note already took the earlier one.
   if (sdr) {
-    const sibs = (i.siblingTexts ?? []).join(' ').toLowerCase()
+    // Owner, 2026-11-24: the recruiter, sales leader or founder always gets the
+    // prospecting line; the alum gets Kalshi (Coinbase if a colleague's note already has Kalshi).
     const alum = i.branch === 'alumni' || i.branch === 'blockchain_ucla'
-    // The sales leader / founder note always carries the prospecting line (owner, 2026-11-24).
-    if (i.branch === 'gtm_leadership' || i.branch === 'executive') return { key: 'sdr', why: 'SDR role, sales leader / founder: own prospecting' }
-    if (!sibs.includes('prospecting')) return { key: 'sdr', why: 'SDR role: own prospecting' }
-    if (!sibs.includes('kalshi') || !alum) return { key: 'kalshi', why: 'SDR role: prospecting taken by a colleague, Kalshi next' }
-    return { key: 'coinbase', why: 'SDR role, alum: prospecting and Kalshi taken, Coinbase next' }
+    if (!alum) return { key: 'sdr', why: 'SDR role: own prospecting' }
+    const sibs = (i.siblingTexts ?? []).join(' ').toLowerCase()
+    if (!sibs.includes('kalshi')) return { key: 'kalshi', why: 'SDR role, alum: Kalshi' }
+    return { key: 'coinbase', why: 'SDR role, alum: Kalshi taken, Coinbase next' }
   }
 
   if (i.branch === 'recruiting') {

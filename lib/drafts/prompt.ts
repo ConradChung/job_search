@@ -45,6 +45,28 @@ const ANGLE: Record<DraftContext['branch'], (c: DraftContext) => string> = {
 }
 
 export const GRAD_LINE = 'graduating March 2027'
+
+/** Owner rule (2026-11-24): no frequency or volume claims in any message. */
+export const FREQUENCY = /\b(every|each|per|a)\s+(single\s+)?(day|week|month|morning|quarter)\b|\b(part of|in) my (day|week)\b|\b(daily|weekly|monthly|nightly|hundreds|thousands|dozens|countless|constantly|nonstop|all the time|day in,? day out|lots of|tons of|a ton of|a lot of)\b/i
+
+/**
+ * SDR / BDR roles in notes (owner, 2026-11-24): "SDR" or "BDR", no parentheticals
+ * or suffixes. A qualifier only when the company has more than one open SDR /
+ * BDR role, or when it names a sales segment ("Early Stage SDR": one of several teams).
+ */
+const SEGMENT = /^(early[- ]stage|mid[- ]?market|enterprise|smb|commercial|strategic|startup)$/i
+export function shortSdrTitle(title: string, otherSdrTitles: string[] = []): string {
+  const kind = /\bbdr\b|business development rep/i.test(title) ? 'BDR' : 'SDR'
+  const qualifier = title
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\s+[-–|]\s+.*$/, ' ')
+    .replace(/\b(sales|business) development representatives?\b|\b[sb]drs?\b/gi, ' ')
+    .replace(/\b(remote|hybrid|on-?site|us|usa|united states|nyc|new york|san francisco|sf)\b/gi, ' ')
+    .replace(/[,/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return qualifier && (otherSdrTitles.length || SEGMENT.test(qualifier)) ? `${qualifier} ${kind}` : kind
+}
 export const TOOL_NAMES = /\b(clay|supabase|exa|apify)\b/i
 
 /** Recruiter notes end with this, word for word (owner rule, 2026-11-23). */
@@ -105,6 +127,7 @@ Rules:
 - At most ${limit} characters in total. Shorter is better. Use the short form of the proof point and cut its second clause first (e.g. drop "working out terms with their head of growth").
 - Plain text, first person, as Conrad. Greet by first name. No emojis, hashtags, em dashes or exclamation marks.
 - Exactly one ask and at most one question mark. Never "X, or Y?" double asks.
+- No frequency or volume claims ("every week", "daily", "hundreds", "a lot of").
 - Say "Blockchain @ UCLA", never "my blockchain club".
 - Vary the proof wording and the question, not the graduation line.
 - Use only the facts above, in your own words. One proof point only. Never use project or brand names that aren't in them; describe the work instead.
@@ -202,6 +225,10 @@ export function draftProblems(
   // Conrad's own title (not Kalshi's head of growth, which is part of the Kalshi fact).
   if (/head of growth and partnerships|\b(i'm|i am|as|was)\s+(the\s+)?head of growth/i.test(text)) problems.push("Name the partner, not Conrad's title.")
   if (hasMetric(text)) problems.push('It states or implies a number (count, dollar amount, rate or pipeline); none are on record.')
+  if (FREQUENCY.test(text)) problems.push('No frequency or volume claims ("every week", "daily", "hundreds").')
+  if (/^([\w -]+ )?[SB]DR$/.test(c.roleTitle ?? '') && /development representative/i.test(text)) problems.push(`Call the role "${c.roleTitle} role".`)
+  if (c.proof.key === 'kalshi' && /kalshi/i.test(text) && !/sourced and closed/i.test(text))
+    problems.push('Say Conrad "sourced and closed" the Kalshi partnership, in those words (not "won" or "landed").')
   if (/\b(clients?|customers?)\b/i.test(text) && c.proof.key !== 'systems') problems.push('Club partners were campus partners, not clients or customers.')
   if (/\b(revenue|valuation|funding|raised|series [a-e])\b/i.test(text) && c.proof.key !== 'systems') problems.push('Leave out revenue, valuations and funding.')
   if (/\b(worked|work|interned|employed)\s+(at|for)\s+(kalshi|coinbase|a16z|uniswap|deloitte|aptos|zksync|wave)/i.test(text))
@@ -232,7 +259,7 @@ Rules:
 - Add exactly one more line of proof: ONE of the other facts, in one clause, different from what the connection note said. Never two.
 - This is the first conversation. Never refer to earlier contact (no "since we last spoke", "great to reconnect", "as we discussed").
 - No exclamation marks, no em dashes.
-- No numbers of any kind (counts, money, rates, pipeline). No internal project names. Never invent anything.
+- No numbers of any kind (counts, money, rates, pipeline), and no frequency or volume claims ("every week", "daily", "hundreds"). No internal project names. Never invent anything.
 - Say "Blockchain @ UCLA", never "my blockchain club". Never imply Conrad worked at a partner.
 
 Return only the message text.`
@@ -246,6 +273,15 @@ export function followupUserPrompt(c: DraftContext, note: string): string {
   return [`Recipient: ${c.firstName}${c.title ? `, ${c.title}` : ''} at ${c.company} (${c.branch}).`, `Role: ${c.roleTitle ?? 'open role'}.`, `Connection note already sent:\n${note}`, ask].join('\n')
 }
 
+/**
+ * SDR notes to a sales leader or founder (owner, 2026-11-24): the after-accept
+ * message is two sentences, written in code: thanks plus interest in the role, then the question.
+ */
+export function leaderFollowup(c: Pick<DraftContext, 'firstName' | 'roleTitle' | 'company'>): string {
+  const company = c.company.replace(/,?\s+(inc|llc|ltd|corp|co)\.?$/i, '').replace(/\.$/, '')
+  return `Thanks for connecting, ${c.firstName}, and I'm interested in the ${c.roleTitle ?? 'open'} role at ${company}. ${LEADER_QUESTION}`
+}
+
 /** Applied: name the application; otherwise the plain scope question (owner, 2026-11-23). */
 export function recruiterFollowupClose(c: Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader'>>): string {
   if (c.sdrLeader) return LEADER_QUESTION
@@ -257,9 +293,14 @@ export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 
   const sentences = text.split(/(?<=[.?!])\s+/).filter((s) => s.trim())
   if (sentences.length < 2 || sentences.length > 4) problems.push('Write two or three sentences.')
   if (hasMetric(text)) problems.push('No numbers of any kind.')
+  if (FREQUENCY.test(text)) problems.push('No frequency or volume claims ("every week", "daily", "hundreds").')
+  if (/^([\w -]+ )?[SB]DR$/.test(c.roleTitle ?? '') && /development representative/i.test(text)) problems.push(`Call the role "${c.roleTitle} role".`)
   if (INTERNAL_NAMES.test(text)) problems.push('No internal project names.')
   if (/\bblockchain club\b/i.test(text)) problems.push('Say "Blockchain @ UCLA".')
   if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader.')
+  if (c.sdrLeader) {
+    if (sentences.length !== 2) problems.push('Two sentences: thanks plus interest in the role, then the question.')
+  }
   if (c.branch === 'recruiting' || c.sdrLeader) {
     if (!text.trim().endsWith(recruiterFollowupClose(c))) problems.push(`End with exactly: "${recruiterFollowupClose(c)}"`)
     if (/cold-?email\w*\s+coinbase/i.test(text)) problems.push('Never use the Coinbase cold-email line with a recruiter.')

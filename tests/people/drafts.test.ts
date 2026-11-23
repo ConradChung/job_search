@@ -3,7 +3,7 @@ import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofF
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
 import { draftTargetIds, leaderScore, topLeader } from '@/lib/drafts/targets'
-import { followupProblems, LEADER_QUESTION, recruiterClose, recruiterFollowupClose, SCOPE_QUESTION } from '@/lib/drafts/prompt'
+import { FREQUENCY, followupProblems, LEADER_QUESTION, leaderFollowup, recruiterClose, recruiterFollowupClose, SCOPE_QUESTION, shortSdrTitle } from '@/lib/drafts/prompt'
 import { PROFILE } from '@/lib/profile'
 
 const ctx: DraftContext = {
@@ -131,7 +131,7 @@ describe('club claims checked in code', () => {
     expect(draftProblems('The Kalshi deal brought revenue.', kalshi).join()).toMatch(/revenue/)
     expect(draftProblems("I'm Head of Growth at Blockchain @ UCLA and closed Kalshi.", kalshi).join()).toMatch(/not Conrad's title/)
     expect(draftProblems('I worked at Kalshi on growth.', kalshi).join()).toMatch(/worked at a partner/)
-    expect(draftProblems('Closed our Kalshi partnership with their head of growth.', kalshi)).toEqual([])
+    expect(draftProblems('Sourced and closed our Kalshi partnership with their head of growth.', kalshi)).toEqual([])
   })
   it('a second proof point is caught', () => {
     expect(draftProblems("Closed our Kalshi partnership and cold-emailed Coinbase's recruiters.", kalshi).join()).toMatch(/second proof point/)
@@ -279,7 +279,49 @@ describe('SDR: sales leader / founder as drafting target (owner, 2026-11-24)', (
     expect(draftProblems(ok, c)).toEqual([])
     expect(draftProblems('Hi Ann, who should I talk to about the SDR role?', c).join()).toMatch(/End with exactly/)
     expect(recruiterFollowupClose(c)).toBe(LEADER_QUESTION)
-    expect(followupProblems(`Thanks for connecting, Ann. I also built and shipped a full-stack GTM platform solo. ${LEADER_QUESTION}`, c)).toEqual([])
+    expect(followupProblems(`Thanks for connecting, Ann, and I'm interested in the SDR role at Acme. ${LEADER_QUESTION}`, c)).toEqual([])
     expect(followupProblems(`Thanks for connecting, Ann. I also built a GTM platform solo. ${SCOPE_QUESTION}`, c).join()).toMatch(/right person/)
+  })
+})
+
+describe('SDR fixes (owner, 2026-11-24)', () => {
+  it('short role titles: SDR / BDR, no parentheticals or suffixes', () => {
+    expect(shortSdrTitle('Sales Development Representative (SDR) - Remote')).toBe('SDR')
+    expect(shortSdrTitle('Business Development Representative (BDR)')).toBe('BDR')
+    expect(shortSdrTitle('Founding BDR, Life Sciences Partnerships')).toBe('BDR')
+    expect(shortSdrTitle('Sales Development Representative, US')).toBe('SDR')
+  })
+  it('keeps a qualifier for several open SDR roles, or a sales segment', () => {
+    expect(shortSdrTitle('Sales Development Representative, Early Stage')).toBe('Early Stage SDR')
+    expect(shortSdrTitle('Sales Development Representative, Fintech', ['SDR, Healthcare'])).toBe('Fintech SDR')
+    expect(shortSdrTitle('Sales Development Representative - San Francisco', ['SDR - New York'])).toBe('SDR')
+  })
+  it('founder / sales leader after-accept: two sentences, no second proof point', () => {
+    const c = { firstName: 'Adar', roleTitle: 'SDR', company: 'Jiga Inc.', branch: 'executive' as const, sdrLeader: true, allowTools: false }
+    const text = leaderFollowup(c)
+    expect(text).toBe(`Thanks for connecting, Adar, and I'm interested in the SDR role at Jiga. ${LEADER_QUESTION}`)
+    expect(followupProblems(text, c)).toEqual([])
+    expect(followupProblems(`Thanks for connecting, Adar. I built a GTM platform solo. ${LEADER_QUESTION}`, c).join()).toMatch(/Two sentences/)
+  })
+  it('no frequency or volume claims, in notes or after-accept messages', () => {
+    for (const t of ['work I already do every week', 'I prospect daily', 'hundreds of accounts', 'already part of my week', 'a lot of outbound']) expect(FREQUENCY.test(t)).toBe(true)
+    expect(FREQUENCY.test('I do my own prospecting for two startups I co-founded')).toBe(false)
+    const fu = followupProblems('Thanks for connecting, Hayley. I run outbound, which I do every week. Is a March 2027 grad in scope for this role?', { branch: 'recruiting', allowTools: false })
+    expect(fu.join()).toMatch(/frequency/)
+  })
+  it('long SDR titles are flagged once the short form is set', () => {
+    expect(followupProblems(`Thanks, Ellie. I prospect for my startups, groundwork for the Business Development Representative role. ${SCOPE_QUESTION}`, { branch: 'recruiting', allowTools: false, roleTitle: 'BDR' }).join()).toMatch(/BDR role/)
+  })
+  it('recruiter / leader always get prospecting; the alum gets Kalshi', () => {
+    const base: ProofInput = { company: 'Acme', category: 'sdr', cryptoOrFintech: false, context: '', roleTitle: 'SDR', branch: 'recruiting', siblingCount: 1, siblingTexts: ['I do my own prospecting'] }
+    expect(chooseProof(base)?.key).toBe('sdr')
+    expect(chooseProof({ ...base, branch: 'gtm_leadership' })?.key).toBe('sdr')
+    expect(chooseProof({ ...base, branch: 'alumni' })?.key).toBe('kalshi')
+    expect(chooseProof({ ...base, branch: 'alumni', siblingTexts: ['Kalshi partnership'] })?.key).toBe('coinbase')
+  })
+  it('Kalshi wording is "sourced and closed"', () => {
+    const c = { limit: 200, siblings: [], proof: { key: 'kalshi' as const, why: '' }, branch: 'alumni' as const }
+    expect(draftProblems("Hi Ann, fellow Bruin here. I won Blockchain @ UCLA's Kalshi partnership. How do SDRs ramp?", c).join()).toMatch(/sourced and closed/)
+    expect(draftProblems("Hi Ann, fellow Bruin here. I sourced and closed Blockchain @ UCLA's partnership with Kalshi. How do SDRs ramp?", c)).toEqual([])
   })
 })
