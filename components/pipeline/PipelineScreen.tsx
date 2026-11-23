@@ -512,6 +512,7 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
                               </button>
                             )}
                           </div>
+                          <ReasonLine reason={r?.classify_reason} />
                         </td>
                         <td className="px-2.5 py-2">
                           <CategoryPill category={r?.category ?? null} confidence={r?.category_confidence ?? null} />
@@ -660,6 +661,16 @@ function NotesEditor({ initial, onSave }: { initial: string; onSave: (v: string)
 }
 
 /** One open role in the expanded row: its own status, flags, posting and notes. */
+/** The classifier's one-line reason for the category, so odd titles read clearly. */
+function ReasonLine({ reason, className }: { reason?: string | null; className?: string }) {
+  if (!reason) return null
+  return (
+    <div className={cn('mt-0.5 truncate text-[11px] text-fg-46', className)} title={reason}>
+      {reason}
+    </div>
+  )
+}
+
 function RoleLine({ role: r, flags, primary, onRole }: { role: CompanyJob; flags: CompanyView['flags']; primary: boolean; onRole: (r: CompanyJob, body: { status?: string; notes?: string | null }) => void }) {
   const [notesOpen, setNotesOpen] = useState(false)
   return (
@@ -689,6 +700,7 @@ function RoleLine({ role: r, flags, primary, onRole }: { role: CompanyJob; flags
           </button>
         </span>
       </div>
+      <ReasonLine reason={r.classify_reason} className="pl-4" />
       {notesOpen && (
         <NotesEditor
           initial={r.notes ?? ''}

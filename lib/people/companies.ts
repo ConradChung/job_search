@@ -39,10 +39,12 @@ export interface CompanyJob {
   notes: string | null
   /** Classification spend for this role (classification->>cost). */
   classify_cost: string | null
+  /** The classifier's one-line reason for the category. */
+  classify_reason?: string | null
 }
 
 export const COMPANY_JOB_COLUMNS =
-  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity, industries:raw->>industries, closing_required, section, salary_text, salary_min, salary_max, location, board, notes, classify_cost:classification->>cost'
+  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity, industries:raw->>industries, closing_required, section, salary_text, salary_min, salary_max, location, board, notes, classify_cost:classification->>cost, classify_reason:classification->>reason'
 
 export interface RunSummary {
   company_key: string
