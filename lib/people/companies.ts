@@ -27,10 +27,11 @@ export interface CompanyJob {
   work_locations: string[] | null
   start_requirement: string | null
   start_date: string | null
+  company_city: string | null
 }
 
 export const COMPANY_JOB_COLUMNS =
-  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date'
+  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity'
 
 export interface RunSummary {
   company_key: string
@@ -59,6 +60,8 @@ export interface CompanyView {
   passes: boolean
   canDraft: boolean
   override: boolean
+  /** Primary role is in NYC (or HQ there): sorted to the top within its track. */
+  home: boolean
   /** Routing rule: the one the last search applied, else the one it would apply. */
   rule: string
   ruleApplied: boolean
@@ -97,6 +100,7 @@ export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: Ru
       passes: fit.passes,
       canDraft: fit.canDraft,
       override: fit.override,
+      home: fit.home,
       rule: ruleFor(track, band),
       ruleApplied: false,
       searchedAt: null,
@@ -121,6 +125,8 @@ export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: Ru
   return [...out.values()].sort(
     (a, b) =>
       Number(b.passes) - Number(a.passes) ||
+      a.track.localeCompare(b.track) ||
+      Number(b.home) - Number(a.home) ||
       (a.bestTier ?? 9) - (b.bestTier ?? 9) ||
       (b.latestPosted ?? '').localeCompare(a.latestPosted ?? '') ||
       a.name.localeCompare(b.name)

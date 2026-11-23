@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanDraft, draftProblems, firstName, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
+import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
 import { PROFILE } from '@/lib/profile'
@@ -87,6 +87,37 @@ describe('proof point selection (owner rules 2026-11-23)', () => {
   })
 })
 
+describe('SDR proof points (owner, 2026-11-23)', () => {
+  const sdr = (over: Partial<ProofInput>) => pick({ category: 'sales', roleTitle: 'Sales Development Representative', ...over })
+  it('own prospecting by default; Kalshi then Coinbase to vary later notes', () => {
+    expect(sdr({})?.key).toBe('sdr')
+    expect(sdr({ siblingCount: 1 })?.key).toBe('kalshi')
+    expect(sdr({ siblingCount: 2 })?.key).toBe('sdr')
+    expect(sdr({ siblingCount: 3 })?.key).toBe('coinbase')
+  })
+  it('crypto → Coinbase, fintech → Kalshi; partners still outrank', () => {
+    expect(sdr({ cryptoOrFintech: true, context: 'web3 wallet' })?.key).toBe('coinbase')
+    expect(sdr({ cryptoOrFintech: true, context: 'payments for SMBs' })?.key).toBe('kalshi')
+    expect(sdr({ company: 'Coinbase' })?.key).toBe('partner_team')
+  })
+  it('the SDR fact is in the owner\'s words and has no numbers', () => {
+    expect(PROFILE.proof.sdr.facts[0]).toBe('I do my own prospecting, write the copy and handle replies for two startups I co-founded.')
+    for (const f of Object.values(PROFILE.proof).flatMap((p) => p.facts)) expect(hasMetric(f)).toBe(false)
+  })
+})
+
+describe('no numbers of any kind', () => {
+  it('rejects counts, money, rates and pipeline anywhere', () => {
+    for (const bad of ['booked 40 meetings', 'set fifty demos', '$2M in pipeline', 'a 35% reply rate', 'reply rates doubled', '3x pipeline', 'pipeline of $500k', 'hundreds of leads', '12 events']) {
+      expect(hasMetric(bad)).toBe(true)
+    }
+    for (const ok of ['two startups I co-founded', 'graduating March 2027', 'outbound lead pipelines', 'ran events with a16z and Uniswap']) {
+      expect(hasMetric(ok)).toBe(false)
+    }
+    expect(draftProblems('Hi Sam, I booked 40 meetings last quarter.', ctx).join()).toMatch(/number/)
+  })
+})
+
 describe('fact blocks (one per note, owner wording)', () => {
   it('systems prompt has no club facts; club prompts have exactly one club fact and the club rules', () => {
     const sys = systemPrompt({ key: 'systems', why: '' }, 250)
@@ -119,7 +150,7 @@ describe('club claims checked in code', () => {
   const kalshi = { ...ctx, proof: { key: 'kalshi' as const, why: '' } }
   it('counts, dollars, clients, revenue, valuations, title, working at a partner', () => {
     expect(draftProblems('I ran 12 events with Kalshi.', kalshi).join()).toMatch(/count/)
-    expect(draftProblems('Closed a $5k Kalshi deal.', kalshi).join()).toMatch(/count or dollar/)
+    expect(draftProblems('Closed a $5k Kalshi deal.', kalshi).join()).toMatch(/dollar amount/)
     expect(draftProblems('Kalshi was a club client.', kalshi).join()).toMatch(/not clients/)
     expect(draftProblems('The Kalshi deal brought revenue.', kalshi).join()).toMatch(/revenue/)
     expect(draftProblems("I'm Head of Growth at Blockchain @ UCLA and closed Kalshi.", kalshi).join()).toMatch(/not Conrad's title/)

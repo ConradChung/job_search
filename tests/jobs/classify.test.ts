@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { classifyJob, classifyPrompt, classificationRow, confidenceOf, type ClassifyClient, type ClassifyInput } from '@/lib/jobs/classify'
 import { trackOf, type Category } from '@/lib/jobs/categories'
-import { companyFit, fitFlags, blocks } from '@/lib/jobs/fit'
+import { companyFit, fitFlags, blocks, isSdr } from '@/lib/jobs/fit'
 import { guessFromTitle } from '@/lib/jobs/titleGuess'
 import { ruleFor } from '@/lib/people/targets'
 import { sizeBand } from '@/lib/people/size'
@@ -87,9 +87,13 @@ describe('regression cases: category → routing chain → fit flags → draftin
     })
   }
 
+  it('Formance Founding AE stays blocked as AE', () => {
+    expect(fitFlags({ ...job(CASES[3]), title: 'Founding Account Executive — Technical Sales' }).find((f) => f.code === 'category')?.level).toBe('block')
+  })
+
   it('ElevenLabs: blocked as not GTM Eng, no proof point matches, override still finds no proof', () => {
     const flags = fitFlags(job(CASES[0]))
-    expect(flags.find((f) => f.code === 'category')).toMatchObject({ level: 'block', message: 'Category is Growth Eng (product), not GTM Eng' })
+    expect(flags.find((f) => f.code === 'category')).toMatchObject({ level: 'block', message: 'Category is Growth Eng (product), not GTM Eng or SDR' })
     expect(chooseProof({ company: 'ElevenLabs', category: 'growth_eng_product', cryptoOrFintech: false, context: '', roleTitle: 'Website Growth Engineer', branch: 'alumni', siblingCount: 0 })).toBeNull()
     expect(companyFit([job(CASES[0])], true).canDraft).toBe(true) // override lifts the fit gate…
     // …but drafting still stops at the proof step (lib/drafts/run.ts) as a poor fit.
@@ -113,12 +117,30 @@ describe('fit flags', () => {
     expect(blocks(fitFlags({ ...base, start_requirement: 'specific_date', start_date: '2026-12-01' }))).toBe(true)
     expect(blocks(fitFlags({ ...base, start_requirement: 'specific_date', start_date: '2027-06-01' }))).toBe(false)
   })
-  it('location: info when no locations are configured, block when configured and unmet', () => {
-    expect(fitFlags(base).find((f) => f.code === 'location')?.level).toBe('info')
-    const c = { categories: ['gtm_eng'], seniorityBlock: ['senior'], seniorityWarn: [], locations: ['Los Angeles'], remoteOk: true, earliestStart: '2027-03-01' }
-    expect(blocks(fitFlags({ ...base, work_mode: 'onsite', work_locations: ['New York, NY'] }, c))).toBe(true)
-    expect(blocks(fitFlags({ ...base, work_mode: 'onsite', work_locations: ['Los Angeles, CA'] }, c))).toBe(false)
-    expect(blocks(fitFlags({ ...base, work_mode: 'remote', work_locations: ['United States'] }, c))).toBe(false)
+  it('location (NYC): role in NYC, HQ in NYC, or remote US passes; another city warns; country-only is unknown', () => {
+    const loc = (over: object) => fitFlags({ ...base, ...over }).find((f) => f.code === 'location')
+    expect(loc({ work_mode: 'onsite', work_locations: ['New York, NY'] })).toBeUndefined()
+    expect(loc({ work_mode: 'hybrid', work_locations: ['Brooklyn, NY'] })).toBeUndefined()
+    expect(loc({ work_mode: 'onsite', work_locations: ['San Francisco, CA'], company_city: 'New York' })).toBeUndefined()
+    expect(loc({ work_mode: 'remote', work_locations: ['United States'] })).toBeUndefined()
+    expect(loc({ work_mode: 'onsite', work_locations: ['San Francisco, CA', 'Oakland, CA'] })).toMatchObject({ level: 'warn' })
+    expect(loc({ work_mode: 'remote', work_locations: ['Europe', 'London'] })).toMatchObject({ level: 'warn' })
+    expect(loc({ work_mode: 'unknown', work_locations: ['United States'] })).toMatchObject({ level: 'info', message: 'Location unknown' })
+    expect(blocks(fitFlags({ ...base, work_mode: 'onsite', work_locations: ['Austin, TX'] }))).toBe(false)
+  })
+  it('SDR passes, AE stays blocked', () => {
+    const sales = { ...base, category: 'sales', seniority: 'entry' }
+    expect(isSdr({ category: 'sales', title: 'Sales Development Representative' })).toBe(true)
+    expect(blocks(fitFlags({ ...sales, title: 'Founding SDR' }))).toBe(false)
+    expect(blocks(fitFlags({ ...sales, title: 'BDR, Mid-Market' }))).toBe(false)
+    expect(fitFlags({ ...sales, title: 'Founding Account Executive' }).find((f) => f.code === 'category')).toMatchObject({ level: 'block', message: 'Category is Sales (AE), not GTM Eng or SDR' })
+  })
+  it('NYC roles sort first among passing roles', () => {
+    const sf = { ...base, id: 2, work_mode: 'onsite', work_locations: ['San Francisco, CA'] }
+    const ny = { ...base, id: 3, fit_tier: 3, work_mode: 'onsite', work_locations: ['New York, NY'] }
+    const fit = companyFit([sf, ny])
+    expect(fit.primary?.id).toBe(3)
+    expect(fit.home).toBe(true)
   })
   it('closed postings and unclassified jobs block', () => {
     expect(blocks(fitFlags({ ...base, liveness: 'dead' }))).toBe(true)

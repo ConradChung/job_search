@@ -4,7 +4,7 @@ import { trackOf } from '@/lib/jobs/categories'
 import { companyFit } from '@/lib/jobs/fit'
 
 const ROLE_COLUMNS =
-  'id, company, company_key, company_website, company_employees, company_size, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date'
+  'id, title, company_city:raw->>companyCity, company, company_key, company_website, company_employees, company_size, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date'
 
 /** Company facts plus its primary role (the one the fit flags and routing use). */
 export async function loadCompany(db: SupabaseClient, companyKey: string) {

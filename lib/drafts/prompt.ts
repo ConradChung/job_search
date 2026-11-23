@@ -118,8 +118,24 @@ export function similarity(a: string, b: string): number {
 
 export const MAX_SIMILARITY = 0.35
 
+const NOUNS =
+  'meetings?|calls?|demos?|replies|responses|leads|accounts|deals|opportunit\\w*|emails?|messages?|events?|members?|attendees?|students|people|partners?|sponsors?|companies|customers?|clients?|signups?|users'
+const METRICS = [
+  new RegExp(`\\b\\d[\\d,.]*\\s*[km]?\\+?\\s*(${NOUNS})\\b`, 'i'),
+  new RegExp(`\\b(one|two|three|four|five|six|seven|eight|nine|ten|dozen|twenty|thirty|fifty|hundred|thousand)\\s+(${NOUNS})\\b`, 'i'),
+  /\$\s?\d|\b\d+(\.\d+)?\s?%|\b\d+x\b/i,
+  /\b(reply|response|open|conversion|booking|meeting|win|close) rates?\b/i,
+  /\b\d[\d,.]*\s*[km]?\s*(in\s+)?(pipeline|revenue|arr|mrr|bookings|quota)\b|\b(pipeline|revenue|arr|mrr|quota)\s+(of|worth)\b/i,
+  /\b(dozens|hundreds|thousands|millions) of\b/i,
+]
+/** Owner rule: no numbers of any kind (counts, money, rates, pipeline) in any note. */
+export function hasMetric(text: string): boolean {
+  return METRICS.some((re) => re.test(text))
+}
+
 /** Partner names a proof point is allowed to mention. */
 function allowedPartners(p: ProofChoice): string[] {
+  if (p.key === 'sdr') return []
   if (p.key === 'kalshi') return ['kalshi']
   if (p.key === 'coinbase') return ['coinbase']
   if (p.key === 'events') return p.partner ? [p.partner.toLowerCase()] : ['a16z', 'andreessen', 'uniswap', 'deloitte', 'aptos', 'zksync', 'wave digital']
@@ -135,8 +151,7 @@ export function draftProblems(text: string, c: Pick<DraftContext, 'limit' | 'sib
   if ((text.match(/\?/g) ?? []).length > 1) problems.push('It asks more than one question; keep exactly one ask.')
   // Conrad's own title (not Kalshi's head of growth, which is part of the Kalshi fact).
   if (/head of growth and partnerships|\b(i'm|i am|as|was)\s+(the\s+)?head of growth/i.test(text)) problems.push("Name the partner, not Conrad's title.")
-  if (/\b\d[\d,]*\+?\s*(events?|members?|attendees?|students|people|partners?|sponsors?|companies)\b|\$\s?\d|\b(dozens|hundreds|thousands) of\b/i.test(text))
-    problems.push('It states or implies a count or dollar amount; none are on record.')
+  if (hasMetric(text)) problems.push('It states or implies a number (count, dollar amount, rate or pipeline); none are on record.')
   if (/\b(clients?|customers?)\b/i.test(text) && c.proof.key !== 'systems') problems.push('Club partners were campus partners, not clients or customers.')
   if (/\b(revenue|valuation|funding|raised|series [a-e])\b/i.test(text) && c.proof.key !== 'systems') problems.push('Leave out revenue, valuations and funding.')
   if (/\b(worked|work|interned|employed)\s+(at|for)\s+(kalshi|coinbase|a16z|uniswap|deloitte|aptos|zksync|wave)/i.test(text))

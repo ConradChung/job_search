@@ -1,4 +1,5 @@
 import { PROFILE, type ProofKey } from '@/lib/profile'
+import { isSdr } from '@/lib/jobs/fit'
 
 export interface ProofInput {
   company: string
@@ -50,6 +51,16 @@ const CRYPTO = /\bcrypto|blockchain|web3|stablecoin|\bdefi\b|on-?chain|digital a
 export function chooseProof(i: ProofInput): ProofChoice | null {
   const partner = partnerOf(i.company)
   if (partner) return { key: partner.proof as ProofKey, partner: partner.name, why: `${partner.name} is a Blockchain @ UCLA partner` }
+
+  const ctx0 = i.context ?? ''
+  // SDR roles (owner, 2026-11-23): own prospecting by default; Kalshi / Coinbase
+  // to vary a second note at the company, or at crypto / fintech companies.
+  if (isSdr({ category: i.category, title: i.roleTitle })) {
+    if (i.cryptoOrFintech && CRYPTO.test(ctx0)) return { key: 'coinbase', why: 'SDR at a crypto company' }
+    if (i.cryptoOrFintech || PREDICTION.test(ctx0)) return { key: 'kalshi', why: 'SDR at a fintech company' }
+    if (i.siblingCount % 2 === 1) return { key: i.siblingCount % 4 === 1 ? 'kalshi' : 'coinbase', why: 'SDR, varying a later note' }
+    return { key: 'sdr', why: 'SDR: own prospecting' }
+  }
 
   const systemsFits = !!i.category && SYSTEMS_FITS.includes(i.category)
   if (i.branch === 'blockchain_ucla' && systemsFits) return { key: 'systems', why: 'shared club opens the note; systems fits the role' }
