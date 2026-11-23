@@ -3,7 +3,7 @@ import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofF
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
 import { draftTargetIds, leaderScore, topLeader } from '@/lib/drafts/targets'
-import { FREQUENCY, followupProblems, LEADER_QUESTION, leaderFollowup, recruiterClose, recruiterFollowupClose, SCOPE_QUESTION, shortSdrTitle } from '@/lib/drafts/prompt'
+import { FREQUENCY, followupProblems, LEADER_QUESTION, leaderFollowup, recruiterClose, recruiterFollowup, recruiterFollowupClose, recruiterProofLine, shortSdrTitle, TOOL_NAMES } from '@/lib/drafts/prompt'
 import { PROFILE } from '@/lib/profile'
 
 const ctx: DraftContext = {
@@ -215,9 +215,9 @@ describe('note rules (owner, 2026-11-23 review)', () => {
     expect(draftProblems("Hi Dana, I'm Conrad at UCLA, graduating March 2027. I cold-emailed Coinbase's recruiters. Interested in the GTM Automation Engineer role at Crexi. Open to connecting?", rec).join()).toMatch(/Coinbase/)
   })
   it('after-accept message: recruiters end with the scope question', () => {
-    expect(SCOPE_QUESTION).toBe('Is a March 2027 grad in scope for this role?')
-    const ok = 'Thanks for connecting, Daniella. I also built and shipped a full-stack GTM platform solo. Is a March 2027 grad in scope for this role?'
-    expect(followupProblems(ok, { branch: 'recruiting', allowTools: false })).toEqual([])
+    const ok = 'Thanks for connecting, Daniella. I built and shipped a full-stack GTM platform solo. Is a March 2027 grad in scope for the GTM Engineer role?'
+    expect(followupProblems(ok, { branch: 'recruiting', allowTools: false, roleTitle: 'GTM Engineer' })).toEqual([])
+    expect(followupProblems('Thanks for connecting, Daniella. I built a GTM platform solo. Is a March 2027 grad in scope for this role?', { branch: 'recruiting', allowTools: false, roleTitle: 'GTM Engineer' }).join()).toMatch(/End with exactly/)
     expect(followupProblems('Thanks! I booked 40 meetings. Any openings?', { branch: 'recruiting', allowTools: false }).join()).toMatch(/numbers|scope/)
     expect(followupProblems("Thanks for connecting, Aryan. Since we last spoke, I've run outbound for two startups I co-founded. Open to a quick chat about your team?", { branch: 'alumni', allowTools: true }).join()).toMatch(/earlier contact/)
     expect(followupProblems('Thanks for connecting, Andrew. Beyond the Kalshi partnership, I built and shipped a full-stack GTM platform solo, and I build outbound lead pipelines. Is a March 2027 grad in scope for this role?', { branch: 'recruiting', allowTools: false }).join()).toMatch(/one more fact only/)
@@ -280,7 +280,7 @@ describe('SDR: sales leader / founder as drafting target (owner, 2026-11-24)', (
     expect(draftProblems('Hi Ann, who should I talk to about the SDR role?', c).join()).toMatch(/End with exactly/)
     expect(recruiterFollowupClose(c)).toBe(LEADER_QUESTION)
     expect(followupProblems(`Thanks for connecting, Ann, and I'm interested in the SDR role at Acme. ${LEADER_QUESTION}`, c)).toEqual([])
-    expect(followupProblems(`Thanks for connecting, Ann. I also built a GTM platform solo. ${SCOPE_QUESTION}`, c).join()).toMatch(/right person/)
+    expect(followupProblems(`Thanks for connecting, Ann. I also built a GTM platform solo. Is a March 2027 grad in scope for this role?`, c).join()).toMatch(/right person/)
   })
 })
 
@@ -310,7 +310,7 @@ describe('SDR fixes (owner, 2026-11-24)', () => {
     expect(fu.join()).toMatch(/frequency/)
   })
   it('long SDR titles are flagged once the short form is set', () => {
-    expect(followupProblems(`Thanks, Ellie. I prospect for my startups, groundwork for the Business Development Representative role. ${SCOPE_QUESTION}`, { branch: 'recruiting', allowTools: false, roleTitle: 'BDR' }).join()).toMatch(/BDR role/)
+    expect(followupProblems(`Thanks, Ellie. I prospect for my startups, groundwork for the Business Development Representative role. Is a March 2027 grad in scope for this role?`, { branch: 'recruiting', allowTools: false, roleTitle: 'BDR' }).join()).toMatch(/BDR role/)
   })
   it('recruiter / leader always get prospecting; the alum gets Kalshi', () => {
     const base: ProofInput = { company: 'Acme', category: 'sdr', cryptoOrFintech: false, context: '', roleTitle: 'SDR', branch: 'recruiting', siblingCount: 1, siblingTexts: ['I do my own prospecting'] }
@@ -323,5 +323,31 @@ describe('SDR fixes (owner, 2026-11-24)', () => {
     const c = { limit: 200, siblings: [], proof: { key: 'kalshi' as const, why: '' }, branch: 'alumni' as const }
     expect(draftProblems("Hi Ann, fellow Bruin here. I won Blockchain @ UCLA's Kalshi partnership. How do SDRs ramp?", c).join()).toMatch(/sourced and closed/)
     expect(draftProblems("Hi Ann, fellow Bruin here. I sourced and closed Blockchain @ UCLA's partnership with Kalshi. How do SDRs ramp?", c)).toEqual([])
+  })
+})
+
+describe('recruiter after-accept template (owner, 2026-11-24)', () => {
+  const c = { firstName: 'Nick', roleTitle: 'GTM Engineer (Remote) - US', company: 'Omni, Inc.', allowTools: false, branch: 'recruiting' as const }
+  it('not applied: thanks, one proof line the note did not use, scope question for the short role', () => {
+    const note = "Hi Nick, I'm Conrad at UCLA, graduating March 2027. I built and shipped a full-stack GTM platform solo. Interested in the GTM Engineer role at Omni. Open to connecting?"
+    const text = recruiterFollowup(c, note, false)
+    expect(text).toBe('Thanks for connecting, Nick. I build outbound lead pipelines for two startups I co-founded. Is a March 2027 grad in scope for the GTM Engineer role?')
+    expect(followupProblems(text, c)).toEqual([])
+    expect(text).not.toMatch(/I'd love to bring/)
+  })
+  it('applied: names the application, no proof line', () => {
+    expect(recruiterFollowup({ ...c, roleStatus: 'applied' }, 'x', false)).toBe("Thanks for connecting, Nick. I've applied for the GTM Engineer role at Omni. Is a March 2027 grad in scope?")
+  })
+  it('the role title never counts as a used proof line', () => {
+    const note = "Hi Nick, I co-founded two startups and run their outbound. Interested in the Software Engineer, Growth Data Platform role at Omni. Open to connecting?"
+    expect(recruiterProofLine(note, false, false)).toBe('I built and shipped a full-stack GTM platform solo.')
+  })
+  it('SDR roles: prospecting in the note, so Kalshi in the message', () => {
+    expect(recruiterProofLine('Hi Ann, I prospect for two startups I co-founded. Interested in the SDR role at Acme.', true, false)).toBe("I sourced and closed Blockchain @ UCLA's partnership with Kalshi.")
+  })
+  it('tool names only for technical recruiters', () => {
+    const note = 'Hi Ann, I built and shipped a full-stack GTM platform solo.'
+    expect(recruiterProofLine(note, false, true)).toMatch(/Clay, Exa, Apify and Supabase/)
+    expect(recruiterProofLine(note, false, false)).not.toMatch(TOOL_NAMES)
   })
 })

@@ -15,7 +15,8 @@
     "enrich": "tsx --env-file=.env.local scripts/enrich-jobs.ts",
     "classify": "tsx --env-file=.env.local scripts/classify-jobs.ts",
     "reselect": "tsx --env-file=.env.local scripts/apply-selection.ts",
-    "split-sales": "tsx --env-file=.env.local scripts/split-sales.ts"
+    "split-sales": "tsx --env-file=.env.local scripts/split-sales.ts",
+    "recruiter-followups": "tsx --env-file=.env.local scripts/recruiter-followups.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

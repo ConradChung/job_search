@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { cleanDraft, draftProblems, followupProblems, leaderFollowup, followupSystemPrompt, followupUserPrompt, systemPrompt, userPrompt, type DraftContext } from './prompt'
+import { cleanDraft, draftProblems, followupProblems, leaderFollowup, recruiterFollowup, followupSystemPrompt, followupUserPrompt, systemPrompt, userPrompt, type DraftContext } from './prompt'
 
 export const DRAFT_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6, cacheRead: 0.2 / 1e6, cacheWrite: 5 / 1e6 }
@@ -83,6 +83,11 @@ export async function generateFollowup(client: DraftClient, ctx: DraftContext, n
   // Founders and sales leaders at SDR companies: fixed two-sentence message, no model call.
   if (ctx.sdrLeader) {
     const text = leaderFollowup(ctx)
+    return { text, model: 'template', cost: 0, problems: followupProblems(text, ctx) }
+  }
+  // Recruiters: fixed template too (owner, 2026-11-24).
+  if (ctx.branch === 'recruiting') {
+    const text = recruiterFollowup(ctx, note, /^([\w -]+ )?[SB]DR$/.test(ctx.roleTitle ?? ''))
     return { text, model: 'template', cost: 0, problems: followupProblems(text, ctx) }
   }
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: followupUserPrompt(ctx, note) }]

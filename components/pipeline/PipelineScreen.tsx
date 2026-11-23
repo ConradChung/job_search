@@ -165,7 +165,10 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
     if (!res?.ok) {
       patchRole(c.key, r.id, before)
       toast.error('Could not save. Try again.')
+      return
     }
+    const out = await res.json().catch(() => null)
+    if (out?.followups) router.refresh()
   }
 
   async function draftPerson(c: CompanyView, p: PersonRow, quiet = false): Promise<boolean> {
@@ -923,7 +926,7 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
           <div className="mb-1 flex items-center gap-2 text-[10px] font-medium tracking-wide text-fg-46 uppercase">
             After they accept
             {p.branch === 'recruiting' && company.primary?.status !== 'applied' && (
-              <span className="rounded-full border border-amber/30 bg-amber/10 px-1.5 text-amber normal-case" title="Apply before sending; then set the job to Applied and redraft for the applied wording">
+              <span className="rounded-full border border-amber/30 bg-amber/10 px-1.5 text-amber normal-case" title="Apply before sending. Setting the role to Applied rewrites this message with the applied wording.">
                 apply first
               </span>
             )}

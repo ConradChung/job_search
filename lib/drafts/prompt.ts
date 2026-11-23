@@ -79,9 +79,6 @@ export function recruiterClose(c: Pick<DraftContext, 'roleTitle' | 'company'>): 
 /** SDR notes to a sales leader or founder: their after-accept message ends with this (owner, 2026-11-24). */
 export const LEADER_QUESTION = 'Are you the right person to talk to about it, or should I go through recruiting?'
 
-/** The scope question lives in the after-accept message for recruiters. */
-export const SCOPE_QUESTION = 'Is a March 2027 grad in scope for this role?'
-
 /** The single fact block a note may use, in the owner's words. Tool names stripped unless allowed. */
 export function proofFacts(p: ProofChoice, allowTools = true): { label: string; facts: string[]; short?: string } {
   if (p.key === 'systems' && p.variant === 'platform') return { label: 'GTM systems', facts: ['Built and shipped a full-stack GTM platform solo.'] }
@@ -282,13 +279,60 @@ export function leaderFollowup(c: Pick<DraftContext, 'firstName' | 'roleTitle' |
   return `Thanks for connecting, ${c.firstName}, and I'm interested in the ${c.roleTitle ?? 'open'} role at ${company}. ${LEADER_QUESTION}`
 }
 
-/** Applied: name the application; otherwise the plain scope question (owner, 2026-11-23). */
-export function recruiterFollowupClose(c: Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader'>>): string {
-  if (c.sdrLeader) return LEADER_QUESTION
-  return c.roleStatus === 'applied' ? `I've applied for the ${c.roleTitle ?? 'open'} role. Is a March 2027 grad in scope?` : SCOPE_QUESTION
+/** Role title without parentheticals or " - Remote" style suffixes (SDR titles are already short). */
+export function shortRole(title: string | null | undefined): string {
+  const t = (title ?? '')
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\s+[-–|]\s+.*$/, ' ')
+    .replace(/,\s*(remote|hybrid|us|usa|united states|nyc|new york|san francisco|sf)\s*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return t || 'open'
 }
 
-export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'> & Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader'>>): string[] {
+const plainCompany = (company: string) => company.replace(/,?\s+(inc|llc|ltd|corp|co)\.?$/i, '').replace(/\.$/, '')
+
+/** Recruiters (owner, 2026-11-24): applied names the application; otherwise the scope question for the role. */
+export function recruiterFollowupClose(c: Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader' | 'company'>>): string {
+  if (c.sdrLeader) return LEADER_QUESTION
+  const role = shortRole(c.roleTitle)
+  return c.roleStatus === 'applied'
+    ? `I've applied for the ${role} role at ${plainCompany(c.company ?? '')}. Is a March 2027 grad in scope?`
+    : `Is a March 2027 grad in scope for the ${role} role?`
+}
+
+/** Proof lines for the recruiter after-accept message, in the owner's words, each with what marks it in a note. */
+const PROOF_LINES = {
+  prospecting: { mark: /prospect|outbound|outreach|copy and (handle )?replies/i, text: () => 'I do my own prospecting, write the copy and handle replies for two startups I co-founded.' },
+  kalshi: { mark: /kalshi/i, text: () => "I sourced and closed Blockchain @ UCLA's partnership with Kalshi." },
+  platform: { mark: /platform/i, text: () => 'I built and shipped a full-stack GTM platform solo.' },
+  pipelines: {
+    mark: /pipelines?|enrichment/i,
+    text: (tools: boolean) =>
+      tools ? 'I build outbound lead pipelines, enrichment and lead validation with tools like Clay, Exa, Apify and Supabase.' : 'I build outbound lead pipelines for two startups I co-founded.',
+  },
+} as const
+
+/** One proof line the note didn't use. SDR roles follow the SDR order (prospecting, then Kalshi). */
+export function recruiterProofLine(note: string, sdr: boolean, allowTools: boolean): string {
+  // Only the proof sentence counts: the role title ("Growth Data Platform") must not look like a used line.
+  note = note.replace(/Interested in the [\s\S]*$/, '')
+  const order: (keyof typeof PROOF_LINES)[] = sdr ? ['prospecting', 'kalshi', 'platform', 'pipelines'] : ['platform', 'pipelines', 'kalshi']
+  // The pipelines line also says "two startups I co-founded": skip it when the note already does.
+  const key = order.find((k) => !PROOF_LINES[k].mark.test(note) && !(k === 'pipelines' && !allowTools && /co-?founded/i.test(note))) ?? order[0]
+  return PROOF_LINES[key].text(allowTools)
+}
+
+/**
+ * Recruiter after-accept message (owner, 2026-11-24): fixed template, no model call.
+ * Thanks, one proof line different from the note, then the close.
+ */
+export function recruiterFollowup(c: Pick<DraftContext, 'firstName' | 'roleTitle' | 'company' | 'allowTools'> & Partial<Pick<DraftContext, 'roleStatus'>>, note: string, sdr: boolean): string {
+  if (c.roleStatus === 'applied') return `Thanks for connecting, ${c.firstName}. ${recruiterFollowupClose(c)}`
+  return `Thanks for connecting, ${c.firstName}. ${recruiterProofLine(note, sdr, c.allowTools)} ${recruiterFollowupClose(c)}`
+}
+
+export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'> & Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader' | 'company'>>): string[] {
   const problems: string[] = []
   const sentences = text.split(/(?<=[.?!])\s+/).filter((s) => s.trim())
   if (sentences.length < 2 || sentences.length > 4) problems.push('Write two or three sentences.')

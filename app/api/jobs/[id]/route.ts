@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireOwner } from '@/lib/auth/requireOwner'
 import { createServiceClient } from '@/lib/supabase/service'
 import { STATUS_VALUES } from '@/lib/jobs/statuses'
+import { refreshRecruiterFollowups } from '@/lib/drafts/recruiterFollowups'
 
 const Patch = z
   .object({
@@ -20,13 +21,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const parsed = Patch.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'bad body' }, { status: 400 })
 
-  const { data, error } = await createServiceClient()
+  const db = createServiceClient()
+  const { data, error } = await db
     .from('jobs')
     .update(parsed.data)
     .eq('id', id)
-    .select('id, status, notes, status_changed_at, updated_at')
+    .select('id, company_key, status, notes, status_changed_at, updated_at')
     .maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'not found' }, { status: 404 })
-  return NextResponse.json(data)
+  // Status drives the recruiter after-accept wording (applied or not): refresh it, free, from the template.
+  let followups = 0
+  if (parsed.data.status !== undefined) {
+    const r = await refreshRecruiterFollowups(db, { companyKey: data.company_key, write: true }).catch(() => null)
+    followups = r?.changes.filter((c) => !c.problems.length).length ?? 0
+  }
+  return NextResponse.json({ ...data, followups })
 }
