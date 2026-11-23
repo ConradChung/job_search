@@ -42,7 +42,9 @@ export const TOOL_NAMES = /\b(clay|supabase|exa|apify)\b/i
 
 /** Recruiter notes end with this, word for word (owner rule, 2026-11-23). */
 export function recruiterClose(c: Pick<DraftContext, 'roleTitle' | 'company'>): string {
-  return `Interested in the ${c.roleTitle ?? 'open'} role at ${c.company}. Open to connecting?`
+  // Legal suffixes read badly mid-sentence ("Checkr, Inc..").
+  const company = c.company.replace(/,?\s+(inc|llc|ltd|corp|co)\.?$/i, '').replace(/\.$/, '')
+  return `Interested in the ${c.roleTitle ?? 'open'} role at ${company}. Open to connecting?`
 }
 
 /** The scope question lives in the after-accept message for recruiters. */
