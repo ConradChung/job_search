@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofFacts, similarity, systemPrompt, userPrompt, type DraftContext } from '@/lib/drafts/prompt'
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
-import { draftTargetIds } from '@/lib/drafts/targets'
-import { followupProblems, recruiterClose, SCOPE_QUESTION } from '@/lib/drafts/prompt'
+import { draftTargetIds, leaderScore, topLeader } from '@/lib/drafts/targets'
+import { followupProblems, LEADER_QUESTION, recruiterClose, recruiterFollowupClose, SCOPE_QUESTION } from '@/lib/drafts/prompt'
 import { PROFILE } from '@/lib/profile'
 
 const ctx: DraftContext = {
@@ -242,5 +242,44 @@ describe('note rules (owner, 2026-11-23 review)', () => {
       { id: 7, company_key: 'b', branch: 'alumni', rank: 1 },
     ])
     expect([...t].sort()).toEqual([1, 4, 6])
+  })
+})
+
+describe('SDR: sales leader / founder as drafting target (owner, 2026-11-24)', () => {
+  const sdr = new Set(['acme'])
+  const p = (id: number, branch: string, title: string, rank = 1, draft: string | null = null, company_key = 'acme') => ({ id, company_key, branch, rank, title, draft })
+
+  it('replaces the recruiter at SDR companies; the alum is still drafted', () => {
+    const t = draftTargetIds([p(1, 'alumni', 'SDR'), p(2, 'recruiting', 'GTM Recruiter'), p(3, 'gtm_leadership', 'VP Sales')], sdr)
+    expect([...t].sort()).toEqual([1, 3])
+  })
+  it('falls back to the top recruiter when no leader was found', () => {
+    expect([...draftTargetIds([p(2, 'recruiting', 'Recruiter'), p(4, 'recruiting', 'Recruiter', 2)], sdr)]).toEqual([2])
+  })
+  it('keeps a recruiter whose note is already written', () => {
+    expect([...draftTargetIds([p(2, 'recruiting', 'Recruiter', 1, 'Hi'), p(3, 'executive', 'CEO')], sdr)]).toEqual([2])
+  })
+  it('does nothing outside SDR companies', () => {
+    expect([...draftTargetIds([p(2, 'recruiting', 'Recruiter'), p(3, 'gtm_leadership', 'VP Sales')])]).toEqual([2])
+  })
+  it('prefers a sales leader, then the CEO, then another founder, then other GTM leads', () => {
+    expect(topLeader([p(1, 'executive', 'Co-Founder & CTO'), p(2, 'executive', 'Co-founder and CEO', 2)])?.id).toBe(2)
+    expect(topLeader([p(1, 'executive', 'CEO'), p(2, 'executive', 'Chief Revenue Officer (CRO)', 2)])?.id).toBe(2)
+    expect(topLeader([p(1, 'gtm_leadership', 'VP of Marketing & Growth'), p(2, 'gtm_leadership', 'Head of Enterprise Sales', 3)])?.id).toBe(2)
+    expect(topLeader([p(1, 'gtm_leadership', 'Head of Growth Marketing')])?.id).toBe(1)
+    expect(leaderScore({ branch: 'recruiting', title: 'Head of Sales Recruiting' })).toBeNull()
+  })
+  it('leader notes carry the prospecting line', () => {
+    const base: ProofInput = { company: 'Acme', category: 'sdr', cryptoOrFintech: false, context: '', roleTitle: 'SDR', branch: 'executive', siblingCount: 1, siblingTexts: ['I do my own prospecting'] }
+    expect(chooseProof(base)?.key).toBe('sdr')
+  })
+  it('leader notes use the recruiter shape; the after-accept message asks who to talk to', () => {
+    const c = { limit: 200, siblings: [], proof: { key: 'sdr' as const, why: '' }, branch: 'executive' as const, sdrLeader: true, roleTitle: 'SDR', company: 'Acme', allowTools: false }
+    const ok = `Hi Ann, I'm Conrad at UCLA, graduating March 2027. I do my own prospecting for two startups I co-founded. ${recruiterClose(c)}`
+    expect(draftProblems(ok, c)).toEqual([])
+    expect(draftProblems('Hi Ann, who should I talk to about the SDR role?', c).join()).toMatch(/End with exactly/)
+    expect(recruiterFollowupClose(c)).toBe(LEADER_QUESTION)
+    expect(followupProblems(`Thanks for connecting, Ann. I also built and shipped a full-stack GTM platform solo. ${LEADER_QUESTION}`, c)).toEqual([])
+    expect(followupProblems(`Thanks for connecting, Ann. I also built a GTM platform solo. ${SCOPE_QUESTION}`, c).join()).toMatch(/right person/)
   })
 })

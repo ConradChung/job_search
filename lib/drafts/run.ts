@@ -54,6 +54,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     company: p.company,
     roleTitle: extra?.title ?? null,
     roleStatus: extra?.status ?? null,
+    sdrLeader: fit.track === 'sdr' && (p.branch === 'gtm_leadership' || p.branch === 'executive'),
     mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,
     allowTools:
       (p.branch === 'recruiting' && TITLES.technicalRecruiting.test(p.title ?? '')) ||

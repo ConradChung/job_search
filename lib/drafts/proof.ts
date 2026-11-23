@@ -75,6 +75,8 @@ export function chooseProof(i: ProofInput): ProofChoice | null {
   if (sdr) {
     const sibs = (i.siblingTexts ?? []).join(' ').toLowerCase()
     const alum = i.branch === 'alumni' || i.branch === 'blockchain_ucla'
+    // The sales leader / founder note always carries the prospecting line (owner, 2026-11-24).
+    if (i.branch === 'gtm_leadership' || i.branch === 'executive') return { key: 'sdr', why: 'SDR role, sales leader / founder: own prospecting' }
     if (!sibs.includes('prospecting')) return { key: 'sdr', why: 'SDR role: own prospecting' }
     if (!sibs.includes('kalshi') || !alum) return { key: 'kalshi', why: 'SDR role: prospecting taken by a colleague, Kalshi next' }
     return { key: 'coinbase', why: 'SDR role, alum: prospecting and Kalshi taken, Coinbase next' }

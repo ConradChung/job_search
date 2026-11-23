@@ -19,8 +19,8 @@ import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
 import { BRANCH_LABEL, BRANCH_ORDER, EST_COST_PER_SEARCH, maxSearches, type Branch } from '@/lib/people/targets'
 import { OUTREACH, type PersonRow } from '@/lib/people/types'
 
-/** Measured 2026-11-22: about $0.004 per note; preview rounds up. */
-const DRAFT_COST = 0.008
+/** Note + after-accept message with retries: measured 2026-11-24 at about $0.02 per person. */
+const DRAFT_COST = 0.02
 
 type PeopleFilter = 'all' | 'none' | 'has'
 type FitFilter = 'passes' | 'flagged' | 'all'
@@ -123,7 +123,10 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
   const unsearched = visible.filter((c) => !c.searchedAt)
   const estimate = (list: CompanyView[]) => list.reduce((n, c) => n + searchesFor(c), 0) * EST_COST_PER_SEARCH
 
-  const targets = useMemo(() => draftTargetIds(companies.flatMap((c) => c.people)), [companies])
+  const targets = useMemo(
+    () => draftTargetIds(companies.flatMap((c) => c.people), new Set(companies.filter((c) => c.fitTrack === 'sdr').map((c) => c.key))),
+    [companies]
+  )
   const undrafted = visible
     .filter((c) => c.canDraft)
     .flatMap((c) => c.people.filter((p) => targets.has(p.id) && !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))

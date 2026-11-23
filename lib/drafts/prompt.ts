@@ -17,6 +17,8 @@ export interface DraftContext {
   proof: ProofChoice
   /** Tool names only for technical recruiters and alumni in engineering. */
   allowTools: boolean
+  /** SDR role, note to the sales leader or founder: recruiter note shape, leader after-accept ask. */
+  sdrLeader?: boolean
   /** Status of the role in the tracker (recruiter after-accept message depends on it). */
   roleStatus?: string | null
   /** Notes already drafted for other people at this company (must not be reused). */
@@ -24,15 +26,20 @@ export interface DraftContext {
   limit: number
 }
 
+const RECRUITER_SHAPE = (c: DraftContext) =>
+  `Write exactly this shape, in this order: "Hi ${c.firstName}, I'm Conrad at UCLA, ${GRAD_LINE}." then ONE short proof sentence, then exactly "${recruiterClose(c)}". No other question. If it runs long, shorten the proof sentence, never the role.`
+
 const ANGLE: Record<DraftContext['branch'], (c: DraftContext) => string> = {
   blockchain_ucla: (c) =>
     `They were in Blockchain @ UCLA, the club Conrad is in now. Open with that shared club (not "fellow Bruin"); no partner names needed for the opener. Then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
   alumni: (c) =>
     `They went to UCLA. Open with "fellow Bruin" (that already says UCLA, so never add "I'm at UCLA"), then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
-  recruiting: (c) =>
-    `They recruit at ${c.company}. Write exactly this shape, in this order: "Hi ${c.firstName}, I'm Conrad at UCLA, ${GRAD_LINE}." then ONE short proof sentence, then exactly "${recruiterClose(c)}". No other question. If it runs long, shorten the proof sentence, never the role.`,
-  gtm_leadership: (c) => `They lead GTM / sales / growth at ${c.company}. Name the ${c.roleTitle ?? 'open'} role, give the proof point, and make ONE ask.`,
-  executive: (c) => `They are an executive or founder at ${c.company}. Be brief: name the ${c.roleTitle ?? 'open'} role and ask ONE thing: who the right person to talk to is.`,
+  recruiting: (c) => `They recruit at ${c.company}. ${RECRUITER_SHAPE(c)}`,
+  gtm_leadership: (c) =>
+    c.sdrLeader ? `They lead sales / GTM at ${c.company}, hiring for an SDR role. ${RECRUITER_SHAPE(c)}` : `They lead GTM / sales / growth at ${c.company}. Name the ${c.roleTitle ?? 'open'} role, give the proof point, and make ONE ask.`,
+  executive: (c) =>
+    c.sdrLeader ? `They are a founder or executive at ${c.company}, hiring for an SDR role. ${RECRUITER_SHAPE(c)}` :
+    `They are an executive or founder at ${c.company}. Be brief: name the ${c.roleTitle ?? 'open'} role and ask ONE thing: who the right person to talk to is.`,
   poster: (c) => `They posted the ${c.roleTitle ?? 'open'} role at ${c.company}. Name it and make ONE ask.`,
   other: (c) => `Name the ${c.roleTitle ?? 'open'} role at ${c.company} and make ONE ask.`,
 }
@@ -46,6 +53,9 @@ export function recruiterClose(c: Pick<DraftContext, 'roleTitle' | 'company'>): 
   const company = c.company.replace(/,?\s+(inc|llc|ltd|corp|co)\.?$/i, '').replace(/\.$/, '')
   return `Interested in the ${c.roleTitle ?? 'open'} role at ${company}. Open to connecting?`
 }
+
+/** SDR notes to a sales leader or founder: their after-accept message ends with this (owner, 2026-11-24). */
+export const LEADER_QUESTION = 'Are you the right person to talk to about it, or should I go through recruiting?'
 
 /** The scope question lives in the after-accept message for recruiters. */
 export const SCOPE_QUESTION = 'Is a March 2027 grad in scope for this role?'
@@ -172,7 +182,7 @@ function allowedPartners(p: ProofChoice): string[] {
 /** Problems with a draft, or [] if it passes every rule checked in code. */
 export function draftProblems(
   text: string,
-  c: Pick<DraftContext, 'limit' | 'siblings' | 'proof'> & Partial<Pick<DraftContext, 'branch' | 'allowTools' | 'roleTitle' | 'company'>>
+  c: Pick<DraftContext, 'limit' | 'siblings' | 'proof'> & Partial<Pick<DraftContext, 'branch' | 'allowTools' | 'roleTitle' | 'company' | 'sdrLeader'>>
 ): string[] {
   const problems: string[] = []
   if (/march 2027/i.test(text) && !/graduating march 2027/i.test(text)) problems.push(`Write the graduation line exactly as "${GRAD_LINE}".`)
@@ -180,7 +190,7 @@ export function draftProblems(
   if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader; describe the work plainly.')
   if ((c.branch === 'alumni' || c.branch === 'blockchain_ucla') && /\b(i'?m|i am)\s+(a\s+\w+\s+)?at ucla\b/i.test(text))
     problems.push('"fellow Bruin" already says UCLA; drop "I\'m at UCLA".')
-  if (c.branch === 'recruiting' && c.company) {
+  if ((c.branch === 'recruiting' || c.sdrLeader) && c.company) {
     const close = recruiterClose({ roleTitle: c.roleTitle ?? null, company: c.company })
     if (!text.trim().endsWith(close)) problems.push(`End with exactly: "${close}" (shorten the proof, never the role).`)
     if (!text.includes(GRAD_LINE)) problems.push(`Open with "I'm Conrad at UCLA, ${GRAD_LINE}."`)
@@ -230,18 +240,19 @@ Return only the message text.`
 
 export function followupUserPrompt(c: DraftContext, note: string): string {
   const ask =
-    c.branch === 'recruiting'
+    c.branch === 'recruiting' || c.sdrLeader
       ? `End with exactly: "${recruiterFollowupClose(c)}"`
       : `End with one light ask: whether they would be open to a quick chat about their team at ${c.company}. One question only.${(c.branch === 'alumni' || c.branch === 'blockchain_ucla') && !c.mentionRole ? ' Do not name the open role (they are not in its function).' : ''}`
   return [`Recipient: ${c.firstName}${c.title ? `, ${c.title}` : ''} at ${c.company} (${c.branch}).`, `Role: ${c.roleTitle ?? 'open role'}.`, `Connection note already sent:\n${note}`, ask].join('\n')
 }
 
 /** Applied: name the application; otherwise the plain scope question (owner, 2026-11-23). */
-export function recruiterFollowupClose(c: Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle'>>): string {
+export function recruiterFollowupClose(c: Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader'>>): string {
+  if (c.sdrLeader) return LEADER_QUESTION
   return c.roleStatus === 'applied' ? `I've applied for the ${c.roleTitle ?? 'open'} role. Is a March 2027 grad in scope?` : SCOPE_QUESTION
 }
 
-export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'> & Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle'>>): string[] {
+export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'> & Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle' | 'sdrLeader'>>): string[] {
   const problems: string[] = []
   const sentences = text.split(/(?<=[.?!])\s+/).filter((s) => s.trim())
   if (sentences.length < 2 || sentences.length > 4) problems.push('Write two or three sentences.')
@@ -249,7 +260,7 @@ export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 
   if (INTERNAL_NAMES.test(text)) problems.push('No internal project names.')
   if (/\bblockchain club\b/i.test(text)) problems.push('Say "Blockchain @ UCLA".')
   if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader.')
-  if (c.branch === 'recruiting') {
+  if (c.branch === 'recruiting' || c.sdrLeader) {
     if (!text.trim().endsWith(recruiterFollowupClose(c))) problems.push(`End with exactly: "${recruiterFollowupClose(c)}"`)
     if (/cold-?email\w*\s+coinbase/i.test(text)) problems.push('Never use the Coinbase cold-email line with a recruiter.')
   }

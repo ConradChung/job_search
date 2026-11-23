@@ -2,7 +2,7 @@ import { sizeBand, type SizeBand } from './size'
 import type { PersonRow } from './types'
 import { ruleFor } from './targets'
 import { trackOf, type Track } from '@/lib/jobs/categories'
-import { companyFit, type FitFlag, type FitTrack } from '@/lib/jobs/fit'
+import { companyFit, TRACK_RANK, type FitFlag, type FitTrack } from '@/lib/jobs/fit'
 
 export interface CompanyJob {
   id: number
@@ -10,6 +10,7 @@ export interface CompanyJob {
   company: string
   title: string | null
   link: string
+  industries?: string | null
   fit_tier: number | null
   status: string
   company_website: string | null
@@ -41,7 +42,7 @@ export interface CompanyJob {
 }
 
 export const COMPANY_JOB_COLUMNS =
-  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity, closing_required, section, salary_text, salary_min, salary_max, location, board, notes, classify_cost:classification->>cost'
+  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity, industries:raw->>industries, closing_required, section, salary_text, salary_min, salary_max, location, board, notes, classify_cost:classification->>cost'
 
 export interface RunSummary {
   company_key: string
@@ -158,8 +159,9 @@ export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: Ru
 
   return [...out.values()].sort(
     (a, b) =>
-      // Owner order: Blockchain @ UCLA alumni first, then NYC roles, then newest postings.
+      // Owner order: Blockchain @ UCLA alumni first, then track (GTM Eng, SDR, RevOps, then blocked), then NYC roles, then newest postings.
       Number(b.people.some((p) => p.branch === 'blockchain_ucla')) - Number(a.people.some((p) => p.branch === 'blockchain_ucla')) ||
+      TRACK_RANK[a.passes ? a.fitTrack : 'blocked'] - TRACK_RANK[b.passes ? b.fitTrack : 'blocked'] ||
       Number(b.home) - Number(a.home) ||
       (b.latestPosted ?? '').localeCompare(a.latestPosted ?? '') ||
       a.name.localeCompare(b.name)

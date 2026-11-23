@@ -97,7 +97,7 @@ export const PROFILE = {
      */
     tracks: {
       gtm_eng: { label: 'GTM Eng', primary: true, draft: true },
-      sdr: { label: 'Sales – SDR/BDR', primary: false, draft: false },
+      sdr: { label: 'Sales – SDR/BDR', primary: false, draft: true },
       revops: { label: 'RevOps', primary: false, draft: true },
     } as Record<string, { label: string; primary: boolean; draft: boolean }>,
     /** Seniority that blocks drafting vs. only warns. */
@@ -110,6 +110,14 @@ export const PROFILE = {
      */
     homeLabel: 'NYC',
     homePattern: '\\b(new york|nyc|manhattan|brooklyn|queens|bronx|staten island)\\b',
+    /**
+     * Staffing agencies and job boards posting for a client (owner, 2026-11-23):
+     * always block. Matched on the company name, or LinkedIn's "Staffing and
+     * Recruiting" industry.
+     */
+    staffingPattern:
+      '^(tenth revolution|ladders|fde times|robert half|jobot|insight global|teksystems|randstad|adecco|kforce|motion recruitment|hays|michael page|harnham|talentful|cybercoders|aerotek|kelly services|manpower|apex systems|vaco|beacon hill|lhh|hirewell|betts|bowen|frank recruitment|jefferson frank|nigel frank|mason frank|treehouse|underdog\\.io)\\b',
+    staffingIndustry: '\\bstaffing\\b',
     /** Earliest start Conrad can do (graduates March 2027). */
     earliestStart: '2027-03-01',
   },

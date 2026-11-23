@@ -26,7 +26,8 @@ const opt = (n: string, d: string) => {
   const i = args.indexOf(`--${n}`)
   return i >= 0 && args[i + 1] ? args[i + 1] : d
 }
-const EST_PER_DRAFT = 0.008
+// Note + after-accept message, with retries (measured 2026-11-24: about $0.02 each).
+const EST_PER_DRAFT = 0.02
 
 async function main() {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -69,10 +70,19 @@ async function main() {
   // Top alum + top recruiter per company only, unless specific ids are given.
   let people = data ?? []
   if (!ids) {
-    const { data: everyone } = await db.from('people').select('id, company_key, branch, rank')
-    const targets = draftTargetIds(everyone ?? [])
+    const { data: everyone } = await db.from('people').select('id, company_key, branch, rank, title, draft')
+    // SDR companies: the sales leader / founder replaces the recruiter as a target.
+    const sdr = new Set<string>()
+    for (const k of new Set(people.map((p) => p.company_key))) {
+      const loaded = await loadCompany(db, k)
+      if (loaded?.fit.track === 'sdr') sdr.add(k)
+    }
+    const targets = draftTargetIds(everyone ?? [], sdr)
     people = people.filter((p) => targets.has(p.id))
   }
+  // Leaders first, so their note takes the prospecting line and the alum's varies from it.
+  const lead = (b: string) => (b === 'gtm_leadership' || b === 'executive' ? 0 : 1)
+  people.sort((a, b) => a.company_key.localeCompare(b.company_key) || lead(a.branch) - lead(b.branch))
 
   console.log(`${people.length} people, about $${(people.length * EST_PER_DRAFT).toFixed(2)} (estimate)`)
   if (!flag('yes')) {

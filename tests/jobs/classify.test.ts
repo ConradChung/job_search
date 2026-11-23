@@ -3,13 +3,15 @@ import { describe, expect, it } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { classifyJob, classifyPrompt, classificationRow, confidenceOf, type ClassifyClient, type ClassifyInput } from '@/lib/jobs/classify'
 import { trackOf, type Category } from '@/lib/jobs/categories'
-import { companyFit, fitFlags, fitTrack, blocks, isSdr } from '@/lib/jobs/fit'
+import { companyFit, fitFlags, fitTrack, blocks, isSdr, isStaffing } from '@/lib/jobs/fit'
+import { buildCompanies, type CompanyJob } from '@/lib/people/companies'
 import { finalCategory, requiresClosingExperience, splitSales } from '@/lib/jobs/categories'
 import { planFor } from '@/lib/people/targets'
 import { guessFromTitle } from '@/lib/jobs/titleGuess'
 import { ruleFor } from '@/lib/people/targets'
 import { sizeBand } from '@/lib/people/size'
 import { chooseProof } from '@/lib/drafts/proof'
+import { PROFILE } from '@/lib/profile'
 
 const fixture = (name: string): ClassifyInput => JSON.parse(readFileSync(`tests/fixtures/postings/${name}.json`, 'utf8'))
 
@@ -294,11 +296,13 @@ describe('tracks (owner, 2026-11-23)', () => {
     expect(requiresClosingExperience('2+ years of prospecting experience')).toBe(false)
     expect(requiresClosingExperience(null)).toBe(false)
   })
-  it('company rows prefer GTM Eng over SDR over RevOps; SDR drafting is paused', () => {
+  it('company rows prefer GTM Eng over SDR over RevOps; a track can pause drafting', () => {
     const role = (id: number, category: string, title = 'x') => ({ ...base, id, fit_tier: 1, category, title })
     expect(companyFit([role(1, 'revops'), role(2, 'sdr', 'SDR'), role(3, 'gtm_eng')]).primary?.id).toBe(3)
     const sdrOnly = companyFit([role(1, 'revops'), role(2, 'sdr', 'SDR')])
-    expect(sdrOnly).toMatchObject({ track: 'sdr', passes: true, draftPaused: true, canDraft: false })
+    expect(sdrOnly).toMatchObject({ track: 'sdr', passes: true, draftPaused: false, canDraft: true })
+    const paused = { ...PROFILE.constraints, tracks: { ...PROFILE.constraints.tracks, sdr: { label: 'SDR', primary: false, draft: false } } }
+    expect(companyFit([role(2, 'sdr', 'SDR')], false, paused)).toMatchObject({ track: 'sdr', passes: true, draftPaused: true, canDraft: false })
     expect(companyFit([role(1, 'revops')])).toMatchObject({ track: 'revops', passes: true, canDraft: true })
     expect(companyFit([role(1, 'ae')])).toMatchObject({ track: 'blocked', passes: false })
   })
@@ -317,5 +321,38 @@ describe('tracks (owner, 2026-11-23)', () => {
     expect(p('alumni', ['I do my own prospecting…'])).toBe('kalshi')
     expect(p('alumni', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('coinbase')
     expect(p('recruiting', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('kalshi')
+  })
+})
+
+describe('staffing agencies block (owner, 2026-11-24)', () => {
+  const base = { title: 'GTM Engineer', category: 'gtm_eng', category_confidence: 'high', seniority: 'entry', work_mode: 'onsite', work_locations: ['New York, NY'], start_requirement: 'unknown', start_date: null }
+  it('blocks known agencies and client postings by name', () => {
+    for (const company of ['Tenth Revolution Group', 'Ladders', 'FDE Times', 'Robert Half']) {
+      const f = fitFlags({ ...base, company })
+      expect(f.find((x) => x.code === 'staffing')?.level).toBe('block')
+      expect(blocks(f)).toBe(true)
+    }
+  })
+  it("blocks LinkedIn's Staffing and Recruiting industry", () => {
+    expect(isStaffing({ company: 'Someco', industries: 'Staffing and Recruiting' })).toBe(true)
+  })
+  it('leaves product companies alone', () => {
+    for (const company of ['Engine', 'Handshake', 'demandDrive', 'Landed', 'Haystack Labs']) {
+      expect(isStaffing({ company, industries: 'Software Development' })).toBe(false)
+    }
+    expect(blocks(fitFlags({ ...base, company: 'Engine' }))).toBe(false)
+  })
+})
+
+describe('default sort (owner, 2026-11-24)', () => {
+  const job = (key: string, category: string, posted: string, loc = 'Austin, TX') =>
+    ({ id: key.length * 100 + posted.length, company_key: key, company: key, title: category === 'sdr' ? 'SDR' : 'GTM Engineer', link: '', fit_tier: 1, status: 'new', posted_at: posted, category, category_confidence: 'high', seniority: 'entry', work_mode: 'onsite', work_locations: [loc], start_requirement: 'unknown', start_date: null, section: 'main' }) as unknown as CompanyJob
+  it('GTM Eng, then SDR, then RevOps, then blocked; NYC then newest within a track', () => {
+    const order = buildCompanies(
+      [job('rev', 'revops', '2026-11-20'), job('sdr', 'sdr', '2026-11-21'), job('gtm-old', 'gtm_eng', '2026-11-01'), job('ae', 'ae', '2026-11-22'), job('gtm-new', 'gtm_eng', '2026-11-19'), job('gtm-nyc', 'gtm_eng', '2026-10-01', 'New York, NY')],
+      [],
+      []
+    ).map((c) => c.key)
+    expect(order).toEqual(['gtm-nyc', 'gtm-new', 'gtm-old', 'sdr', 'rev', 'ae'])
   })
 })

@@ -16,10 +16,13 @@ export interface FitInput {
   company_city?: string | null
   /** SDR roles: the posting asks for 2+ years of closing experience. */
   closing_required?: boolean | null
+  /** For the staffing-agency check. */
+  company?: string | null
+  industries?: string | null
 }
 
 export interface FitFlag {
-  code: 'category' | 'seniority' | 'location' | 'start' | 'unclassified' | 'dead'
+  code: 'category' | 'seniority' | 'location' | 'start' | 'unclassified' | 'dead' | 'staffing'
   /** block: drafting is skipped until the owner overrides. warn: shown, still drafts. info: shown only. */
   level: 'block' | 'warn' | 'info'
   message: string
@@ -35,6 +38,8 @@ type Constraints = {
   homePattern: string
   homeLabel: string
   earliestStart: string
+  staffingPattern?: string
+  staffingIndustry?: string
 }
 
 const US = /\b(united states|usa|u\.s\.?a?\.?|us|remote|anywhere)\b/i
@@ -72,6 +77,13 @@ export function categoryLevel(job: Pick<FitInput, 'category' | 'category_confide
   return { level: 'block', message: `Category is ${label}, not GTM Eng or SDR` }
 }
 
+/** Staffing agency / job board posting for someone else. */
+export function isStaffing(job: Pick<FitInput, 'company' | 'industries'>, c: Pick<Constraints, 'staffingPattern' | 'staffingIndustry'> = PROFILE.constraints): boolean {
+  const name = (job.company ?? '').trim()
+  if (c.staffingPattern && name && new RegExp(c.staffingPattern, 'i').test(name)) return true
+  return !!(c.staffingIndustry && job.industries && new RegExp(c.staffingIndustry, 'i').test(job.industries))
+}
+
 /** Role based in the home city, or company headquartered there. */
 export function isHomeRole(job: Pick<FitInput, 'work_locations' | 'company_city'>, c: Pick<Constraints, 'homePattern'> = PROFILE.constraints): boolean {
   const home = new RegExp(c.homePattern, 'i')
@@ -82,6 +94,7 @@ export function isHomeRole(job: Pick<FitInput, 'work_locations' | 'company_city'
 export function fitFlags(job: FitInput, c: Constraints = PROFILE.constraints): FitFlag[] {
   const flags: FitFlag[] = []
   if (job.liveness === 'dead') flags.push({ code: 'dead', level: 'block', message: 'Posting is closed' })
+  if (isStaffing(job, c)) flags.push({ code: 'staffing', level: 'block', message: 'Staffing agency or job board, not the employer' })
 
   if (!job.category) {
     flags.push({ code: 'unclassified', level: 'block', message: 'Not classified yet' })
@@ -128,7 +141,7 @@ export function fitFlags(job: FitInput, c: Constraints = PROFILE.constraints): F
 
 export const blocks = (flags: FitFlag[]) => flags.some((f) => f.level === 'block')
 
-const TRACK_RANK: Record<FitTrack, number> = { gtm_eng: 0, sdr: 1, revops: 2, blocked: 3 }
+export const TRACK_RANK: Record<FitTrack, number> = { gtm_eng: 0, sdr: 1, revops: 2, blocked: 3 }
 
 /**
  * A company passes when at least one of its roles has no blocking flag. The

@@ -31,7 +31,7 @@ async function main() {
   } else {
     const { data: jobs, error } = await db
       .from('jobs')
-      .select('id, title, company_city:raw->>companyCity, company_key, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date')
+      .select('id, title, company, company_city:raw->>companyCity, industries:raw->>industries, company_key, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date')
     if (error) throw new Error(error.message)
     const { data: overrides } = await db.from('company_settings').select('company_key').eq('fit_override', true)
     const forced = new Set((overrides ?? []).map((o) => o.company_key))
