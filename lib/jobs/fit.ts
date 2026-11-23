@@ -31,7 +31,7 @@ export interface FitFlag {
 type Level = 'pass' | 'warn' | 'block'
 type Constraints = {
   categoryLevels: Record<string, Level>
-  tracks: Record<string, { label: string; primary: boolean; draft: boolean }>
+  tracks: Record<string, { label: string; tier?: number; primary: boolean; draft: boolean }>
   seniorityBlock: readonly string[]
   seniorityWarn: readonly string[]
   /** Regex source matching the home city (e.g. NYC and its boroughs). */
@@ -143,6 +143,11 @@ export function fitFlags(job: FitInput, c: Constraints = PROFILE.constraints): F
 }
 
 export const blocks = (flags: FitFlag[]) => flags.some((f) => f.level === 'block')
+
+/** Tier of a track: 1 GTM Eng, 2 SDR/BDR, 3 RevOps; 0 for blocked. */
+export function tierOf(track: FitTrack, c: Pick<Constraints, 'tracks'> = PROFILE.constraints): number {
+  return track === 'blocked' ? 0 : (c.tracks[track]?.tier ?? 0)
+}
 
 export const TRACK_RANK: Record<FitTrack, number> = { gtm_eng: 0, sdr: 1, revops: 2, blocked: 3 }
 

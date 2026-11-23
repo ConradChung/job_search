@@ -4,6 +4,7 @@ export const OUTREACH = [
   { value: 'none', label: 'Not contacted', tone: 'idle' },
   { value: 'drafted', label: 'Drafted', tone: 'run' },
   { value: 'approved', label: 'Approved', tone: 'wait' },
+  { value: 'exported', label: 'Exported', tone: 'wait' },
   { value: 'sent', label: 'Sent', tone: 'run' },
   { value: 'replied', label: 'Replied', tone: 'ok' },
   { value: 'skip', label: 'Skip', tone: 'bad' },
@@ -31,7 +32,9 @@ export interface PersonRow {
   followup: string | null
   draft_generated_at: string | null
   draft_cost_usd: number | null
+  /** Set when the person went out in a sender CSV (GTM-22). */
+  exported_at?: string | null
 }
 
 export const PERSON_COLUMNS =
-  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, followup, draft_generated_at, draft_cost_usd'
+  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, followup, draft_generated_at, draft_cost_usd, exported_at'

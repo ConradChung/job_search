@@ -92,14 +92,15 @@ export const PROFILE = {
     } as Record<string, 'pass' | 'warn' | 'block'>,
     /**
      * Tracks: the categories that can pass or warn, each with its own badge,
-     * filter and stats. GTM Eng is the primary track (company rows prefer it).
+     * filter and stats. Tier (owner, 2026-11-24): 1 GTM Eng, 2 SDR/BDR, 3 RevOps;
+     * the page opens on Tier 1 and an export never mixes tiers unless asked. GTM Eng is the primary track (company rows prefer it).
      * draft: false pauses drafting for a track (owner: no SDR notes yet).
      */
     tracks: {
-      gtm_eng: { label: 'GTM Eng', primary: true, draft: true },
-      sdr: { label: 'Sales – SDR/BDR', primary: false, draft: true },
-      revops: { label: 'RevOps', primary: false, draft: true },
-    } as Record<string, { label: string; primary: boolean; draft: boolean }>,
+      gtm_eng: { label: 'GTM Eng', tier: 1, primary: true, draft: true },
+      sdr: { label: 'Sales – SDR/BDR', tier: 2, primary: false, draft: true },
+      revops: { label: 'RevOps', tier: 3, primary: false, draft: true },
+    } as Record<string, { label: string; tier: number; primary: boolean; draft: boolean }>,
     /** Seniority that blocks drafting vs. only warns. */
     seniorityBlock: ['senior', 'director_plus'] as string[],
     seniorityWarn: ['mid'] as string[],

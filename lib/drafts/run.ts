@@ -9,7 +9,7 @@ import { functionScore, TITLES } from '@/lib/people/targets'
 import { trackOf } from '@/lib/jobs/categories'
 
 /** SDR / BDR roles go in notes as "SDR" / "BDR" (a qualifier only when the company has several). */
-function noteRoleTitle(fit: ReturnType<typeof companyFit>, title: string | null): string | null {
+export function noteRoleTitle(fit: ReturnType<typeof companyFit>, title: string | null): string | null {
   const role = fit.primary
   if (!title || !role || !isSdr(role)) return title
   const others = fit.ranked.filter((r) => r.role.id !== role.id && isSdr(r.role) && r.role.liveness !== 'dead').map((r) => r.role.title ?? '')

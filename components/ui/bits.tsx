@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils'
 import type { Tone } from '@/lib/jobs/statuses'
 import { CATEGORIES, isCategory } from '@/lib/jobs/categories'
+import { PROFILE } from '@/lib/profile'
 import type { FitFlag } from '@/lib/jobs/fit'
 
 /* Shared bits for the Jobs and Companies screens (Lume pill / chip styles). */
@@ -70,7 +71,7 @@ export function Segmented<T extends string | number>({
   )
 }
 
-export function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+export function Chip({ active, onClick, children }: { active: boolean; onClick: (e?: React.MouseEvent) => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -96,11 +97,12 @@ export function CategoryPill({ category, confidence }: { category: string | null
     return <span className="rounded-full border border-dashed border-line px-2 py-0.5 text-[11px] text-fg-46">Unclassified</span>
   }
   const meta = CATEGORIES[category]
+  const tier = PROFILE.constraints.tracks[category]?.tier
   const low = confidence === 'low'
   const medium = confidence === 'medium'
   return (
     <span
-      title={`${meta.label}: ${meta.hint}. Confidence: ${confidence ?? 'unknown'}${low ? ' (title only, no posting text)' : ''}`}
+      title={`${tier ? `Tier ${tier}. ` : ''}${meta.label}: ${meta.hint}. Confidence: ${confidence ?? 'unknown'}${low ? ' (title only, no posting text)' : ''}`}
       className={cn(
         'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] whitespace-nowrap',
         category === 'gtm_eng'
@@ -113,6 +115,7 @@ export function CategoryPill({ category, confidence }: { category: string | null
         low && 'border-dashed bg-transparent'
       )}
     >
+      {tier ? <span className="font-mono text-[10px] text-fg-46">T{tier}</span> : null}
       {meta.label}
       {low && <span className="text-fg-46">· title only</span>}
       {medium && <span className="text-fg-46">?</span>}

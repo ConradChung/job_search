@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, ChevronRight, Copy, ExternalLink, Globe, Loader2, PenLine, Plus, RefreshCw, Search, Sparkles, StickyNote, X } from 'lucide-react'
+import { Check, ChevronRight, Copy, Download, ExternalLink, Globe, Loader2, PenLine, Plus, RefreshCw, Search, Sparkles, StickyNote, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHead } from '@/components/shell/PageHead'
 import { GlassCard } from '@/components/ui/glass-card'
@@ -13,7 +13,8 @@ import { PROFILE } from '@/lib/profile'
 import { draftTargetIds } from '@/lib/drafts/targets'
 import { cn } from '@/lib/utils'
 import type { CompanyJob, CompanyView } from '@/lib/people/companies'
-import { blocks, FIT_TRACKS, type FitTrack } from '@/lib/jobs/fit'
+import { blocks, FIT_TRACKS, tierOf, type FitTrack } from '@/lib/jobs/fit'
+import { ExportPanel, ImportButton } from './ExportPanel'
 import { STATUSES, statusMeta } from '@/lib/jobs/statuses'
 import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
 import { BRANCH_LABEL, BRANCH_ORDER, EST_COST_PER_SEARCH, maxSearches, type Branch } from '@/lib/people/targets'
@@ -24,7 +25,6 @@ const DRAFT_COST = 0.02
 
 type PeopleFilter = 'all' | 'none' | 'has'
 type FitFilter = 'passes' | 'flagged' | 'all'
-type TrackFilter = 'all' | FitTrack
 type Section = 'all' | 'main' | 'referrals'
 
 const LIVENESS: Record<string, { dot: string; label: string }> = {
@@ -40,6 +40,11 @@ const STATUS_RANK: Record<string, number> = { offer: 6, interviewing: 5, applied
 const rollupStatus = (roles: CompanyJob[]) => roles.reduce((best, r) => ((STATUS_RANK[r.status] ?? 0) > (STATUS_RANK[best] ?? 0) ? r.status : best), roles[0]?.status ?? 'new')
 
 const trackLabel = (t: FitTrack) => (t === 'blocked' ? 'Blocked' : PROFILE.constraints.tracks[t]?.label ?? t)
+
+/** The tier a company row sits in: its best role's track when it passes (or is overridden), else blocked. */
+export const rowTrack = (c: CompanyView): FitTrack => (c.passes || c.override ? c.fitTrack : 'blocked')
+/** Tracks in tier order: Tier 1 GTM Eng, Tier 2 SDR/BDR, Tier 3 RevOps. */
+const TIERS = [...FIT_TRACKS].sort((a, b) => tierOf(a) - tierOf(b))
 
 function salaryLabel(j: Pick<CompanyJob, 'salary_min' | 'salary_max'>) {
   const k = (n: number) => `$${Math.round(n / 1000)}k`
@@ -64,7 +69,9 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
   const [open, setOpen] = useState<Set<string>>(() => new Set(openKey ? [openKey] : []))
   const [query, setQuery] = useState('')
   const [band, setBand] = useState<SizeBand | 'all'>('all')
-  const [track, setTrack] = useState<TrackFilter>('all')
+  // Owner (2026-11-24): the page opens on Tier 1; click a tier to switch, shift-click to add one. Empty = all.
+  const [tiers, setTiers] = useState<Set<FitTrack>>(() => new Set(openKey ? [] : ['gtm_eng']))
+  const [exporting, setExporting] = useState(false)
   const [status, setStatus] = useState<string>('all')
   const [section, setSection] = useState<Section>('all')
   const [fitFilter, setFitFilter] = useState<FitFilter>(openKey ? 'all' : 'passes')
@@ -82,18 +89,21 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
     const byStatus = (s: string) => roles.filter(({ r }) => r.status === s).length
     const inTrack = (t: string) => roles.filter(({ r }) => r.category === t)
     const passing = (t: string) => inTrack(t).filter(({ flags }) => !blocks(flags)).length
+    // Approved notes not yet exported, at companies in this tier.
+    const ready = (t: FitTrack) => companies.filter((c) => rowTrack(c) === t).reduce((n, c) => n + c.people.filter((p) => p.outreach_status === 'approved').length, 0)
     const exa = companies.reduce((n, c) => n + c.spend, 0)
     const claude = companies.reduce((n, c) => n + c.claudeSpend, 0)
     return [
       { label: 'Roles', value: roles.length, hint: `${roles.filter(({ r }) => r.section === 'referrals').length} in referrals` },
-      ...FIT_TRACKS.map((t) => ({
-        label: PROFILE.constraints.tracks[t].label,
+      ...TIERS.map((t) => ({
+        label: `Tier ${tierOf(t)} · ${PROFILE.constraints.tracks[t].label}`,
         value: passing(t),
-        hint: `of ${inTrack(t).length} pass${PROFILE.constraints.categoryLevels[t] === 'warn' ? ' (warn)' : ''}${PROFILE.constraints.tracks[t].draft ? '' : ' · drafting paused'}`,
+        hint: `of ${inTrack(t).length} pass · ${ready(t)} ready to send${PROFILE.constraints.tracks[t].draft ? '' : ' · drafting paused'}`,
       })),
+      { label: 'Ready to send', value: TIERS.reduce((n, t) => n + ready(t), 0), hint: TIERS.map((t) => `T${tierOf(t)} ${ready(t)}`).join(' · ') + ' (approved)' },
       { label: 'People', value: people.length, hint: `${companies.filter((c) => c.searchedAt).length} companies searched` },
       { label: 'UCLA alumni', value: people.filter((p) => p.is_ucla).length, hint: `${people.filter((p) => p.in_blockchain_ucla).length} Blockchain @ UCLA` },
-      { label: 'Contacted', value: people.filter((p) => p.outreach_status === 'sent' || p.outreach_status === 'replied').length, hint: `${people.filter((p) => p.draft).length} drafted` },
+      { label: 'Contacted', value: people.filter((p) => p.outreach_status === 'sent' || p.outreach_status === 'replied').length, hint: `${people.filter((p) => p.draft).length} drafted · ${people.filter((p) => p.outreach_status === 'exported').length} exported` },
       { label: 'Replied', value: people.filter((p) => p.outreach_status === 'replied').length, hint: 'people' },
       { label: 'Applied', value: byStatus('applied'), hint: 'roles' },
       { label: 'Interviewing', value: byStatus('interviewing') + byStatus('offer'), hint: `${byStatus('offer')} offer` },
@@ -107,7 +117,7 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
     return companies.filter(
       (c) =>
         (band === 'all' || c.band === band) &&
-        (track === 'all' || (track === 'blocked' ? c.fitTrack === 'blocked' : c.fitTracks.includes(track))) &&
+        (tiers.size === 0 || tiers.has(rowTrack(c))) &&
         (status === 'all' || c.roles.some((r) => r.status === status)) &&
         (section === 'all' || c.sections.includes(section)) &&
         (fitFilter === 'all' || (fitFilter === 'passes' ? c.passes || c.override : !(c.passes || c.override))) &&
@@ -117,7 +127,7 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
           c.roles.some((r) => (r.title ?? '').toLowerCase().includes(q) || (r.location ?? '').toLowerCase().includes(q)) ||
           c.people.some((p) => p.full_name.toLowerCase().includes(q)))
     )
-  }, [companies, query, band, track, status, section, fitFilter, peopleFilter])
+  }, [companies, query, band, tiers, status, section, fitFilter, peopleFilter])
 
   const searchesFor = (c: CompanyView) => maxSearches(c.band, c.track, c.fitTrack === 'sdr')
   const unsearched = visible.filter((c) => !c.searchedAt)
@@ -323,6 +333,11 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
             </Button>
           ) : (
             <>
+              <ImportButton onDone={() => router.refresh()} />
+              <Button variant="outline" onClick={() => setExporting((v) => !v)}>
+                <Download aria-hidden />
+                Export CSV
+              </Button>
               <Button variant="ghost" onClick={sync} disabled={syncing}>
                 <RefreshCw className={cn(syncing && 'animate-spin')} aria-hidden />
                 {syncing ? 'Syncing…' : 'Sync from sheet'}
@@ -353,6 +368,8 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
           <Button onClick={() => findPeople(unsearched)}>Run search</Button>
         </GlassCard>
       )}
+
+      {exporting && <ExportPanel visible={visible} tiers={tiers} onClose={() => setExporting(false)} onExported={() => router.refresh()} />}
 
       {confirmingDrafts && (
         <GlassCard size="sm" className="flex-row flex-wrap items-center gap-3 px-4">
@@ -385,12 +402,30 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-46" aria-hidden />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Company, role, location or person" aria-label="Search" className="pl-8" />
           </div>
-          <Segmented
-            label="Track"
-            value={track}
-            onChange={setTrack}
-            options={[{ value: 'all', label: 'All tracks' }, ...FIT_TRACKS.map((t) => ({ value: t, label: trackLabel(t) })), { value: 'blocked', label: 'Blocked' }]}
-          />
+          <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Tier (shift-click to add a tier)">
+            {[...TIERS, 'blocked' as const].map((t) => (
+              <span key={t} title="Click to show this tier; shift-click to add it">
+                <Chip
+                  active={tiers.has(t)}
+                  onClick={(e?: React.MouseEvent) => {
+                    const add = !!e && (e.shiftKey || e.metaKey || e.ctrlKey)
+                    setTiers((s) => {
+                      if (!add) return new Set([t])
+                      const n = new Set(s)
+                      if (n.has(t)) n.delete(t)
+                      else n.add(t)
+                      return n
+                    })
+                  }}
+                >
+                  {t === 'blocked' ? 'Blocked' : `Tier ${tierOf(t)} · ${trackLabel(t)}`} <Count n={companies.filter((c) => rowTrack(c) === t).length} />
+                </Chip>
+              </span>
+            ))}
+            <Chip active={tiers.size === 0} onClick={() => setTiers(new Set())}>
+              All
+            </Chip>
+          </div>
           <Segmented
             label="Fit"
             value={fitFilter}
@@ -884,6 +919,11 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
         </span>
       )}
       <span className="ml-auto flex items-center gap-1">
+        {p.exported_at && p.outreach_status === 'exported' && (
+          <span className="text-[10px] whitespace-nowrap text-fg-46" title={`In a sender CSV on ${p.exported_at.slice(0, 10)}`}>
+            exported {p.exported_at.slice(0, 10)}
+          </span>
+        )}
         <select
           value={meta.value}
           onChange={(e) => onOutreach(company, p, e.target.value)}
@@ -913,7 +953,7 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
         <DraftBox
           draft={p.draft}
           busy={busy}
-          approved={p.outreach_status === 'approved' || p.outreach_status === 'sent' || p.outreach_status === 'replied'}
+          approved={['approved', 'exported', 'sent', 'replied'].includes(p.outreach_status)}
           onSave={(d) => onSaveDraft(company, p, d)}
           onRedraft={() => onDraft(company, p)}
           onApprove={() => onOutreach(company, p, 'approved')}
