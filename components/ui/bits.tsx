@@ -103,7 +103,13 @@ export function CategoryPill({ category, confidence }: { category: string | null
       title={`${meta.label}: ${meta.hint}. Confidence: ${confidence ?? 'unknown'}${low ? ' (title only, no posting text)' : ''}`}
       className={cn(
         'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] whitespace-nowrap',
-        category === 'gtm_eng' ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-70',
+        category === 'gtm_eng'
+          ? 'border-primary/40 bg-primary/12 text-fg'
+          : category === 'sdr'
+            ? 'border-[#38bdf8]/40 bg-[#38bdf8]/12 text-fg'
+            : category === 'revops'
+              ? 'border-amber/30 bg-amber/10 text-fg'
+              : 'border-line text-fg-70',
         low && 'border-dashed bg-transparent'
       )}
     >

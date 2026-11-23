@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { classifyJob, classifyPrompt, classificationRow, confidenceOf, type ClassifyClient, type ClassifyInput } from '@/lib/jobs/classify'
 import { trackOf, type Category } from '@/lib/jobs/categories'
-import { companyFit, fitFlags, blocks, isSdr } from '@/lib/jobs/fit'
+import { companyFit, fitFlags, fitTrack, blocks, isSdr } from '@/lib/jobs/fit'
+import { finalCategory, requiresClosingExperience, splitSales } from '@/lib/jobs/categories'
+import { planFor } from '@/lib/people/targets'
 import { guessFromTitle } from '@/lib/jobs/titleGuess'
 import { ruleFor } from '@/lib/people/targets'
 import { sizeBand } from '@/lib/people/size'
@@ -130,11 +132,14 @@ describe('fit flags', () => {
     expect(blocks(fitFlags({ ...base, work_mode: 'onsite', work_locations: ['Austin, TX'] }))).toBe(false)
   })
   it('SDR passes, AE stays blocked', () => {
-    const sales = { ...base, category: 'sales', seniority: 'entry' }
-    expect(isSdr({ category: 'sales', title: 'Sales Development Representative' })).toBe(true)
-    expect(blocks(fitFlags({ ...sales, title: 'Founding SDR' }))).toBe(false)
-    expect(blocks(fitFlags({ ...sales, title: 'BDR, Mid-Market' }))).toBe(false)
-    expect(fitFlags({ ...sales, title: 'Founding Account Executive' }).find((f) => f.code === 'category')).toMatchObject({ level: 'block', message: 'Category is Sales (AE), not GTM Eng or SDR' })
+    const sales = { ...base, seniority: 'entry' }
+    expect(isSdr({ category: 'sdr', title: 'Sales Development Representative' })).toBe(true)
+    expect(blocks(fitFlags({ ...sales, category: 'sdr', title: 'Founding SDR' }))).toBe(false)
+    expect(blocks(fitFlags({ ...sales, category: 'sdr', title: 'BDR, Mid-Market' }))).toBe(false)
+    expect(fitFlags({ ...sales, category: 'ae', title: 'Founding Account Executive' }).find((f) => f.code === 'category')).toMatchObject({
+      level: 'block',
+      message: 'Category is Sales – AE, not GTM Eng or SDR',
+    })
   })
   it('NYC roles sort first among passing roles', () => {
     const sf = { ...base, id: 2, work_mode: 'onsite', work_locations: ['San Francisco, CA'] }
@@ -218,4 +223,99 @@ describe.runIf(process.env.RUN_LIVE === '1')('live classifier on regression post
       expect(r.confidence).not.toBe('low')
     }, 120_000)
   }
+})
+
+describe('Sales split (owner, 2026-11-23)', () => {
+  it('SDR / BDR titles are their own category', () => {
+    for (const t of ['Sales Development Representative', 'Business Development Representative (BDR)', 'Founding SDR', 'SDR', 'Manager, SDR', 'Founding BDR, Life Sciences Partnerships', 'Market Development Rep'])
+      expect(splitSales(t)).toBe('sdr')
+  })
+  it('AE and other closing roles are AE', () => {
+    for (const t of ['Account Executive', 'Founding Account Executive', 'Senior AE, Mid-Market', 'Sales Executive, NA', 'Enterprise Sales Representative'])
+      expect(splitSales(t)).toBe('ae')
+  })
+  it('post-sale roles are account management or customer success', () => {
+    expect(splitSales('Strategic Account Manager')).toBe('account_management')
+    expect(splitSales('Renewals Manager')).toBe('account_management')
+    expect(splitSales('Customer Success Manager')).toBe('customer_success')
+    expect(splitSales('Implementation Specialist')).toBe('customer_success')
+  })
+  it('anything else stays Sales – other; non-sales answers pass through', () => {
+    expect(splitSales('Pre Sales Solutions Engineer')).toBe('sales')
+    expect(splitSales('Sales Enablement Manager')).toBe('sales')
+    expect(finalCategory('sales', 'Business Development Representative')).toBe('sdr')
+    expect(finalCategory('gtm_eng', 'Account Executive')).toBe('gtm_eng')
+  })
+  it('the classifier row splits a sales answer by title', async () => {
+    const client = {
+      beta: { messages: { parse: async () => ({ model: 'm', stop_reason: 'end_turn', stop_details: null, usage: { input_tokens: 1, output_tokens: 1 }, parsed_output: { category: 'sales', department: 'Sales', seniority: 'entry', work_mode: 'onsite', work_locations: ['New York, NY'], start_requirement: 'unknown', start_date: null, crypto_or_fintech: false, confident: true, reason: 'SDR.' } }) } },
+    } as unknown as ClassifyClient
+    const r = await classifyJob(client, fixture('formic-gtm-engineer'))
+    expect(classificationRow(r, { title: 'Sales Development Representative', description: 'Book meetings. 1+ year of cold calling.' })).toMatchObject({ category: 'sdr', closing_required: false })
+    expect(classificationRow(r, { title: 'SDR', description: 'You have 2+ years of closing experience in SaaS.' })).toMatchObject({ category: 'sdr', closing_required: true })
+    expect(classificationRow(r, { title: 'Account Executive' })).toMatchObject({ category: 'ae', closing_required: null })
+  })
+})
+
+describe('tracks (owner, 2026-11-23)', () => {
+  const base = { title: 'x', category_confidence: 'high', seniority: 'entry', work_mode: 'onsite', work_locations: ['New York, NY'], start_requirement: 'unknown', start_date: null }
+  const level = (over: object) => {
+    const f = fitFlags({ ...base, category: 'gtm_eng', ...over }).find((x) => x.code === 'category')
+    return f ? f.level : 'pass'
+  }
+  it('GTM Eng and SDR pass, RevOps warns, everything else blocks', () => {
+    expect(level({ category: 'gtm_eng' })).toBe('pass')
+    expect(level({ category: 'sdr', title: 'SDR' })).toBe('pass')
+    expect(level({ category: 'revops' })).toBe('warn')
+    for (const c of ['growth_eng_product', 'marketing', 'ae', 'account_management', 'customer_success', 'sales', 'partnerships_bd', 'engineering', 'other']) expect(level({ category: c })).toBe('block')
+  })
+  it('each passing category is its own track; the rest are blocked', () => {
+    expect(fitTrack('gtm_eng')).toBe('gtm_eng')
+    expect(fitTrack('sdr')).toBe('sdr')
+    expect(fitTrack('revops')).toBe('revops')
+    expect(fitTrack('ae')).toBe('blocked')
+  })
+  it('a "GTM Engineer" classified RevOps with low confidence warns, never blocks', () => {
+    const f = fitFlags({ ...base, category: 'revops', category_confidence: 'low', title: 'GTM Engineer' })
+    expect(f.find((x) => x.code === 'category')).toMatchObject({ level: 'warn', message: 'Titled GTM Engineer, classified RevOps (low confidence)' })
+    expect(blocks(f)).toBe(false)
+  })
+  it('SDR seniority: entry passes; manager title or 2+ years closing blocks; mid warns', () => {
+    const sdr = { ...base, category: 'sdr', title: 'Sales Development Representative' }
+    expect(blocks(fitFlags(sdr))).toBe(false)
+    expect(fitFlags({ ...sdr, title: 'Manager, SDR' }).find((x) => x.code === 'seniority')).toMatchObject({ level: 'block', message: 'SDR manager role' })
+    expect(fitFlags({ ...sdr, closing_required: true }).find((x) => x.code === 'seniority')).toMatchObject({ level: 'block', message: 'Asks for 2+ years of closing experience' })
+    expect(fitFlags({ ...sdr, seniority: 'mid' }).find((x) => x.code === 'seniority')?.level).toBe('warn')
+  })
+  it('closing experience: only 2+ years of closing / quota counts', () => {
+    expect(requiresClosingExperience('2+ years of closing experience')).toBe(true)
+    expect(requiresClosingExperience('3-5 years in a quota-carrying role')).toBe(true)
+    expect(requiresClosingExperience('1+ years of SaaS sales experience')).toBe(false)
+    expect(requiresClosingExperience('2+ years of prospecting experience')).toBe(false)
+    expect(requiresClosingExperience(null)).toBe(false)
+  })
+  it('company rows prefer GTM Eng over SDR over RevOps; SDR drafting is paused', () => {
+    const role = (id: number, category: string, title = 'x') => ({ ...base, id, fit_tier: 1, category, title })
+    expect(companyFit([role(1, 'revops'), role(2, 'sdr', 'SDR'), role(3, 'gtm_eng')]).primary?.id).toBe(3)
+    const sdrOnly = companyFit([role(1, 'revops'), role(2, 'sdr', 'SDR')])
+    expect(sdrOnly).toMatchObject({ track: 'sdr', passes: true, draftPaused: true, canDraft: false })
+    expect(companyFit([role(1, 'revops')])).toMatchObject({ track: 'revops', passes: true, canDraft: true })
+    expect(companyFit([role(1, 'ae')])).toMatchObject({ track: 'blocked', passes: false })
+  })
+  it('SDR routing: under 30 people, sales leader or founder first; otherwise the sales chain', () => {
+    const small = planFor('sales', 'small', true)
+    expect(small.filter((s) => !s.when).map((s) => s.branch)).toEqual(['gtm_leadership', 'executive'])
+    expect(small.find((s) => s.branch === 'recruiting')?.when?.({})).toBe(true)
+    expect(small.find((s) => s.branch === 'recruiting')?.when?.({ gtm_lead: 1 })).toBe(false)
+    expect(planFor('sales', 'large', true)).toEqual(planFor('sales', 'large'))
+    expect(ruleFor('sales', 'small', true)).toMatch(/sales leader \+ founder/)
+  })
+  it('SDR proof points: prospecting, then Kalshi, then Coinbase (alumni only)', () => {
+    const p = (branch: string, siblingTexts: string[] = []) => chooseProof({ company: 'Acme', category: 'sdr', cryptoOrFintech: false, context: '', roleTitle: 'SDR', branch, siblingCount: siblingTexts.length, siblingTexts })?.key
+    expect(p('recruiting')).toBe('sdr')
+    expect(p('alumni')).toBe('sdr')
+    expect(p('alumni', ['I do my own prospecting…'])).toBe('kalshi')
+    expect(p('alumni', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('coinbase')
+    expect(p('recruiting', ['I do my own prospecting…', 'Kalshi partnership'])).toBe('kalshi')
+  })
 })

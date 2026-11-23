@@ -44,7 +44,7 @@ export const PROFILE = {
         'Builds outbound lead pipelines, enrichment and lead validation with tools like Clay, Exa, Apify and Supabase.',
       ],
     },
-    /** SDR roles, default proof point (owner's words). No numbers of any kind. */
+    /** SDR roles: proof points in order (1) own prospecting, (2) Kalshi, (3) Coinbase (alumni only). No numbers of any kind. */
     sdr: {
       label: 'Own prospecting',
       facts: ['I do my own prospecting, write the copy and handle replies for two startups I co-founded.'],
@@ -72,10 +72,34 @@ export const PROFILE = {
   } satisfies Record<ProofKey, { label: string; facts: string[]; short?: string }>,
 
   constraints: {
-    /** Role categories Conrad drafts for. Anything else is a blocking fit flag. */
-    categories: ['gtm_eng'] as string[],
-    /** SDR / BDR roles (sales category, SDR title) pass; AE roles stay blocked. */
-    allowSdr: true,
+    /**
+     * Per-category fit level (owner, 2026-11-23). pass: drafts. warn: shown,
+     * still drafts. block: no draft until overridden. Anything not listed blocks.
+     */
+    categoryLevels: {
+      gtm_eng: 'pass',
+      sdr: 'pass',
+      revops: 'warn',
+      growth_eng_product: 'block',
+      marketing: 'block',
+      ae: 'block',
+      account_management: 'block',
+      customer_success: 'block',
+      sales: 'block',
+      partnerships_bd: 'block',
+      engineering: 'block',
+      other: 'block',
+    } as Record<string, 'pass' | 'warn' | 'block'>,
+    /**
+     * Tracks: the categories that can pass or warn, each with its own badge,
+     * filter and stats. GTM Eng is the primary track (company rows prefer it).
+     * draft: false pauses drafting for a track (owner: no SDR notes yet).
+     */
+    tracks: {
+      gtm_eng: { label: 'GTM Eng', primary: true, draft: true },
+      sdr: { label: 'Sales – SDR/BDR', primary: false, draft: false },
+      revops: { label: 'RevOps', primary: false, draft: true },
+    } as Record<string, { label: string; primary: boolean; draft: boolean }>,
     /** Seniority that blocks drafting vs. only warns. */
     seniorityBlock: ['senior', 'director_plus'] as string[],
     seniorityWarn: ['mid'] as string[],

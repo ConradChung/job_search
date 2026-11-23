@@ -30,7 +30,8 @@ export interface PersonRow {
   draft: string | null
   followup: string | null
   draft_generated_at: string | null
+  draft_cost_usd: number | null
 }
 
 export const PERSON_COLUMNS =
-  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, followup, draft_generated_at'
+  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, followup, draft_generated_at, draft_cost_usd'

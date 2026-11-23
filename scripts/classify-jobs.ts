@@ -10,6 +10,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { classificationRow, classifyJob } from '../lib/jobs/classify'
 import { guessFromTitle } from '../lib/jobs/titleGuess'
+import { finalCategory } from '../lib/jobs/categories'
 
 const args = process.argv.slice(2)
 const flag = (n: string) => args.includes(`--${n}`)
@@ -42,7 +43,7 @@ async function main() {
     await db
       .from('jobs')
       .update({
-        category: g.category,
+        category: finalCategory(g.category, j.title),
         category_confidence: 'low',
         seniority: g.seniority,
         work_mode: 'unknown',
@@ -74,7 +75,7 @@ async function main() {
           spent += r.cost
           const key = `${r.classification.category}/${r.confidence}`
           counts[key] = (counts[key] ?? 0) + 1
-          await db.from('jobs').update(classificationRow(r)).eq('id', j.id)
+          await db.from('jobs').update(classificationRow(r, j)).eq('id', j.id)
           if (ids) console.log(`${j.id} ${j.company} | ${j.title} → ${r.classification.category} (${r.confidence}), ${r.classification.seniority}, ${r.classification.work_mode} ${r.classification.work_locations.join('/')}, start ${r.classification.start_requirement} · $${r.cost.toFixed(4)}\n   ${r.classification.reason}`)
         } catch (err) {
           console.error(`${j.id} ${j.company}: ${err instanceof Error ? err.message : err}`)

@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
   const owner = isOwner(user?.email, process.env.ALLOWED_EMAIL)
 
   if (isAuthPage) {
-    if (pathname === '/login' && owner) return redirectTo('/jobs', request, response)
+    if (pathname === '/login' && owner) return redirectTo('/', request, response)
     return response
   }
   if (!user || !owner) {

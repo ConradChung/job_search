@@ -7,7 +7,7 @@ import { NavLinks } from '@/components/shell/NavLinks'
 export function TopBar() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-start justify-between p-4">
-      <Link href="/jobs" className="glass brand pointer-events-auto h-11 rounded-full px-4">
+      <Link href="/" className="glass brand pointer-events-auto h-11 rounded-full px-4">
         <span className="size-2 rounded-full bg-primary dark:shadow-(--primary-glow)" aria-hidden />
         job hunt
       </Link>

@@ -15,6 +15,8 @@ export interface CompanyInput {
   track: Track
   /** Seniority of that role: leadership recruiters are only kept for director-level roles. */
   roleSeniority: string | null
+  /** Primary role is SDR / BDR: small companies go to the sales leader or founder first. */
+  sdr?: boolean
 }
 
 export type Searcher = (query: string) => Promise<{ results: ExaResult[]; cost: number }>
@@ -83,7 +85,7 @@ const target = (c: CompanyInput) => (c.domain ? `${c.company} (${c.domain})` : c
  */
 export async function findPeople(c: CompanyInput, search: Searcher): Promise<FindResult> {
   const band = sizeBand(c.employees, c.size_text)
-  const plan = planFor(c.track, band)
+  const plan = planFor(c.track, band, c.sdr)
   const directorRole = c.roleSeniority === 'director_plus'
   const candidates = new Map<string, Candidate>()
   let searches = 0
@@ -188,5 +190,5 @@ export async function findPeople(c: CompanyInput, search: Searcher): Promise<Fin
       })
   }
 
-  return { band, track: c.track, rule: ruleFor(c.track, band), searches, cost, atCompany: candidates.size, people }
+  return { band, track: c.track, rule: ruleFor(c.track, band, c.sdr), searches, cost, atCompany: candidates.size, people }
 }

@@ -87,7 +87,15 @@ const TECHNICAL: Step[] = [
   { id: 'recruiter', branch: 'recruiting', level: 3, titles: TITLES.recruiter, query: 'Recruiter or Talent Acquisition Partner', when: (h) => sum(h, 'tech_recruiting', 'recruiting_lead') === 0 },
 ]
 
-export function planFor(track: Track, band: SizeBand): Step[] {
+/** SDR / BDR roles under 30 people: the sales leader or founder first, recruiting only if neither is found. */
+const SDR_SMALL: Step[] = [
+  { id: 'gtm_lead', branch: 'gtm_leadership', level: 1, titles: TITLES.gtmLead, query: 'Head of Sales, VP Sales, Head of GTM or Head of Growth' },
+  { id: 'executive', branch: 'executive', level: 1, titles: new RegExp(`${TITLES.seniorRevenue.source}|${TITLES.founderCeo.source}`, 'i'), query: 'Co-founder, CEO or Chief Revenue Officer' },
+  { id: 'recruiting', branch: 'recruiting', level: 2, titles: TITLES.recruiter, query: 'Head of Talent, Founding Recruiter or recruiter', when: (h) => sum(h, 'gtm_lead', 'executive') === 0 },
+]
+
+export function planFor(track: Track, band: SizeBand, sdr = false): Step[] {
+  if (sdr && band === 'small') return SDR_SMALL
   return track === 'technical' ? TECHNICAL : SALES[band]
 }
 
@@ -98,7 +106,9 @@ const SALES_RULE: Record<SizeBand, string> = {
 }
 
 /** Human-readable routing rule, shown on the company row. */
-export function ruleFor(track: Track, band: SizeBand): string {
+export function ruleFor(track: Track, band: SizeBand, sdr = false): string {
+  if (sdr && band === 'small') return 'SDR role, small company: sales leader + founder / CEO first; neither found → recruiting'
+  if (sdr) return `SDR role: ${SALES_RULE[band].replace(/^Sales\/GTM role, /, '')}`
   return track === 'technical' ? 'Engineering/product role: technical recruiters → else head of recruiting / talent → else recruiters' : SALES_RULE[band]
 }
 
@@ -106,8 +116,8 @@ export const ALUMNI_QUERY = 'UCLA (University of California, Los Angeles) alumni
 export const BLOCKCHAIN_QUERY = 'Blockchain at UCLA (Blockchain @ UCLA club) members or alumni currently working'
 
 /** Upper bound on searches per company (Blockchain @ UCLA + alumni + every step). */
-export function maxSearches(band: SizeBand, track: Track = 'sales'): number {
-  return 2 + planFor(track, band).length
+export function maxSearches(band: SizeBand, track: Track = 'sales', sdr = false): number {
+  return 2 + planFor(track, band, sdr).length
 }
 
 /** Conservative per-search price for previews (measured $0.007 with text, 2026-11-22). */

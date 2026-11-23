@@ -2,7 +2,7 @@ import { sizeBand, type SizeBand } from './size'
 import type { PersonRow } from './types'
 import { ruleFor } from './targets'
 import { trackOf, type Track } from '@/lib/jobs/categories'
-import { companyFit, type FitFlag } from '@/lib/jobs/fit'
+import { companyFit, type FitFlag, type FitTrack } from '@/lib/jobs/fit'
 
 export interface CompanyJob {
   id: number
@@ -28,10 +28,20 @@ export interface CompanyJob {
   start_requirement: string | null
   start_date: string | null
   company_city: string | null
+  closing_required: boolean | null
+  section: 'main' | 'referrals'
+  salary_text: string | null
+  salary_min: number | null
+  salary_max: number | null
+  location: string | null
+  board: string | null
+  notes: string | null
+  /** Classification spend for this role (classification->>cost). */
+  classify_cost: string | null
 }
 
 export const COMPANY_JOB_COLUMNS =
-  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity'
+  'id, company_key, company, title, link, fit_tier, status, company_website, company_linkedin, company_employees, company_size, funding_stage, posted_at, liveness, category, category_confidence, department, seniority, work_mode, work_locations, start_requirement, start_date, company_city:raw->>companyCity, closing_required, section, salary_text, salary_min, salary_max, location, board, notes, classify_cost:classification->>cost'
 
 export interface RunSummary {
   company_key: string
@@ -51,11 +61,21 @@ export interface CompanyView {
   funding: string | null
   bestTier: number | null
   latestPosted: string | null
+  /** All roles, best fit first, each with its own flags. */
   roles: CompanyJob[]
+  roleFlags: Record<number, FitFlag[]>
   people: PersonRow[]
   /** The role the fit flags, routing and drafts are based on. */
   primary: CompanyJob | null
+  /** Routing track (people-search chain). */
   track: Track
+  /** Owner track of the primary role: gtm_eng, sdr, revops or blocked. */
+  fitTrack: FitTrack
+  /** Tracks of every role (for the track filter). */
+  fitTracks: FitTrack[]
+  draftPaused: boolean
+  /** Main sheet section vs referrals (a company can have both). */
+  sections: ('main' | 'referrals')[]
   flags: FitFlag[]
   passes: boolean
   canDraft: boolean
@@ -67,7 +87,10 @@ export interface CompanyView {
   ruleApplied: boolean
   /** Last successful Exa search, if any. */
   searchedAt: string | null
+  /** Exa people-search spend. */
   spend: number
+  /** Classification + draft spend (Claude). */
+  claudeSpend: number
 }
 
 /** Group job rows into companies and attach people, fit and search history. */
@@ -92,23 +115,34 @@ export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: Ru
       funding: first('funding_stage') as string | null,
       bestTier: tiers.length ? Math.min(...tiers) : null,
       latestPosted: roles.map((r) => r.posted_at ?? '').sort().pop() || null,
-      roles,
+      roles: fit.ranked.map((r) => r.role),
+      roleFlags: Object.fromEntries(fit.ranked.map((r) => [r.role.id, r.flags])),
       people: [],
       primary: fit.primary,
       track,
+      fitTrack: fit.track,
+      fitTracks: [...new Set(fit.ranked.map((r) => r.track))],
+      draftPaused: fit.draftPaused,
+      sections: [...new Set(roles.map((r) => r.section))],
       flags: fit.flags,
       passes: fit.passes,
       canDraft: fit.canDraft,
       override: fit.override,
       home: fit.home,
-      rule: ruleFor(track, band),
+      rule: ruleFor(track, band, fit.track === 'sdr'),
       ruleApplied: false,
       searchedAt: null,
       spend: 0,
+      claudeSpend: roles.reduce((n, r) => n + (Number(r.classify_cost) || 0), 0),
     })
   }
 
-  for (const p of people) out.get(p.company_key)?.people.push(p)
+  for (const p of people) {
+    const c = out.get(p.company_key)
+    if (!c) continue
+    c.people.push(p)
+    c.claudeSpend += Number(p.draft_cost_usd) || 0
+  }
   for (const r of runs) {
     const c = out.get(r.company_key)
     if (!c) continue
@@ -125,7 +159,6 @@ export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: Ru
   return [...out.values()].sort(
     (a, b) =>
       // Owner order: Blockchain @ UCLA alumni first, then NYC roles, then newest postings.
-      Number(b.passes) - Number(a.passes) ||
       Number(b.people.some((p) => p.branch === 'blockchain_ucla')) - Number(a.people.some((p) => p.branch === 'blockchain_ucla')) ||
       Number(b.home) - Number(a.home) ||
       (b.latestPosted ?? '').localeCompare(a.latestPosted ?? '') ||

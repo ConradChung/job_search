@@ -28,6 +28,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
   const loaded = await loadCompany(db, p.company_key)
   if (!loaded) throw new DraftSkipped('no roles for this company')
   const { fit } = loaded
+  if (fit.draftPaused) throw new DraftSkipped(`drafting is paused for the ${PROFILE.constraints.tracks[fit.track]?.label ?? fit.track} track`)
   if (!fit.canDraft) {
     throw new DraftSkipped(`fit flags: ${fit.flags.filter((f) => f.level === 'block').map((f) => f.message).join('; ')}`)
   }

@@ -70,9 +70,18 @@ export function chooseProof(i: ProofInput): ProofChoice | null {
   const sdr = isSdr({ category: i.category, title: i.roleTitle })
   const systemsFits = !!i.category && SYSTEMS_FITS.includes(i.category)
 
+  // SDR / BDR roles (owner, 2026-11-23): (1) own prospecting, (2) Kalshi, (3) Coinbase, alumni only.
+  // The next one is used when a colleague's note already took the earlier one.
+  if (sdr) {
+    const sibs = (i.siblingTexts ?? []).join(' ').toLowerCase()
+    const alum = i.branch === 'alumni' || i.branch === 'blockchain_ucla'
+    if (!sibs.includes('prospecting')) return { key: 'sdr', why: 'SDR role: own prospecting' }
+    if (!sibs.includes('kalshi') || !alum) return { key: 'kalshi', why: 'SDR role: prospecting taken by a colleague, Kalshi next' }
+    return { key: 'coinbase', why: 'SDR role, alum: prospecting and Kalshi taken, Coinbase next' }
+  }
+
   if (i.branch === 'recruiting') {
     if (crypto || fintech) return { key: 'kalshi', why: 'recruiter at a crypto / fintech company' }
-    if (sdr) return { key: 'sdr', why: 'recruiter, SDR role: own prospecting' }
     if (i.category === 'partnerships_bd') return { key: 'kalshi', why: 'recruiter, partnerships / BD role' }
     if (systemsFits) return { key: 'systems', variant: systemsVariant(i, 'platform'), why: 'recruiter: systems work' }
     return null

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
-import { CATEGORY_KEYS, type Category, type Confidence } from './categories'
+import { CLASSIFIER_CATEGORIES, finalCategory, requiresClosingExperience, type Confidence } from './categories'
 
 export const CLASSIFY_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6 }
@@ -11,7 +11,7 @@ export const MAX_DESCRIPTION_CHARS = 16000
 const MIN_DESCRIPTION_CHARS = 400
 
 export const ClassificationSchema = z.object({
-  category: z.enum(CATEGORY_KEYS as [Category, ...Category[]]),
+  category: z.enum(CLASSIFIER_CATEGORIES),
   department: z.string(),
   seniority: z.enum(['intern', 'entry', 'mid', 'senior', 'director_plus', 'unknown']),
   work_mode: z.enum(['remote', 'hybrid', 'onsite', 'unknown']),
@@ -115,11 +115,13 @@ export async function classifyJob(client: ClassifyClient, j: ClassifyInput): Pro
   }
 }
 
-/** Row update for the jobs table. */
-export function classificationRow(r: ClassifyResult) {
+/** Row update for the jobs table. A `sales` answer is split by title (SDR / AE / post-sale). */
+export function classificationRow(r: ClassifyResult, job: { title?: string | null; description?: string | null } = {}) {
   const c = r.classification
+  const category = finalCategory(c.category, job.title)
   return {
-    category: c.category,
+    category,
+    closing_required: category === 'sdr' ? requiresClosingExperience(job.description) : null,
     category_confidence: r.confidence,
     department: c.department || null,
     seniority: c.seniority,
