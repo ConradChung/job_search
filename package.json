@@ -16,6 +16,7 @@
     "classify": "tsx --env-file=.env.local scripts/classify-jobs.ts",
     "reselect": "tsx --env-file=.env.local scripts/apply-selection.ts",
     "split-sales": "tsx --env-file=.env.local scripts/split-sales.ts",
+    "jobs": "npm run sync && npm run enrich && npm run enrich -- --skip-apify --unchecked --slow && npm run classify",
     "recruiter-followups": "tsx --env-file=.env.local scripts/recruiter-followups.ts"
   },
   "dependencies": {

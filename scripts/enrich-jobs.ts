@@ -7,6 +7,8 @@
  *    description from the Ashby / Greenhouse / Lever APIs, LinkedIn's public
  *    page as a one-try fallback.
  *    --board other  limit the fetch to one board
+ *    --unchecked    re-check only roles still marked "not checked"
+ *    --slow         one LinkedIn request every 4s (use after a 429 rate limit)
  * Free: no paid API calls.
  */
 import { createClient } from '@supabase/supabase-js'
@@ -26,10 +28,13 @@ interface Job {
 }
 
 async function allJobs(): Promise<Job[]> {
-  const { data, error } = await db.from('jobs').select('id, link, board, description, fetched_at').order('id')
+  const { data, error } = await db.from('jobs').select('id, link, board, description, fetched_at, liveness').order('id')
   if (error) throw new Error(error.message)
   const board = args.includes('--board') ? args[args.indexOf('--board') + 1] : null
-  return (data ?? []).filter((j) => (flag('refetch') || !j.fetched_at) && (!board || j.board === board))
+  const unchecked = flag('unchecked')
+  return (data ?? []).filter(
+    (j) => (unchecked ? !j.liveness || j.liveness === 'unchecked' : flag('refetch') || !j.fetched_at) && (!board || j.board === board)
+  )
 }
 
 async function apifyBackfill() {
@@ -108,7 +113,8 @@ async function fetchAll() {
       })
     )
   }
-  await Promise.all([pool(rest, 4, 0), pool(linkedin, 2, 700)])
+  // --slow: one LinkedIn request every few seconds (after a run hit their rate limit).
+  await Promise.all([pool(rest, 4, 0), flag('slow') ? pool(linkedin, 1, 4000) : pool(linkedin, 2, 700)])
   console.log(`fetch: ${jobs.length} jobs`, tally)
 }
 

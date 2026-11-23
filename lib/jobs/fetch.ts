@@ -35,8 +35,8 @@ export function htmlToText(html: string): string {
     .trim()
 }
 
-async function get(url: string, timeoutMs = 15000) {
-  return fetch(url, { headers: { 'user-agent': UA, accept: 'application/json,text/html' }, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) })
+async function get(url: string, timeoutMs = 15000, accept = 'application/json,text/html') {
+  return fetch(url, { headers: { 'user-agent': UA, accept }, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) })
 }
 
 /** Ashby returns the whole board; cache per org within a run. */
@@ -121,7 +121,8 @@ export async function fetchPosting(link: string): Promise<FetchResult> {
       return { live: true, description: m ? htmlToText(m[1]) : null, department: null, source: 'linkedin', error: m ? null : 'linkedin: no description' }
     }
     // Any other job page: liveness only.
-    const r = await get(link)
+    // Browser-style Accept: some job sites (Work at a Startup) answer 406 to a JSON-first one.
+    const r = await get(link, 15000, 'text/html,application/xhtml+xml,*/*;q=0.8')
     // Only a real "gone" status counts as dead; 401/403/429/5xx usually mean bot blocking.
     if (r.status === 404 || r.status === 410) return none(null, false)
     if (r.status >= 400) return none(`page ${r.status}`)
