@@ -25,9 +25,20 @@ What exists today (measured 2026-11-22):
 | `gtm` tab in the sheet | 0 of the Jobs Final companies (it covers an older batch) | not useful |
 | Apollo API people search | **blocked**: the account is on the Free plan; `mixed_people/api_search` returns `API_INACCESSIBLE` (tested today) | needs a paid plan |
 | Clay `search-contacts` (connector) | any company by domain or LinkedIn URL, 10 companies per call, per-company cap, **school filter** for UCLA | spare Clay credits (owner to confirm before first run) |
+| Exa search API (`category: "people"` / LinkedIn profiles) | natural-language search such as "UCLA alumni working at Peec AI" or "Head of Growth at peec.ai"; returns LinkedIn profile URLs plus page text | spare Exa credits; plain API key, so it can run **inside the deployed app** |
 | LinkedIn search links | always available, manual click | free |
 
-**Recommendation: Clay first, Apollo only if you upgrade.** Clay has the one filter that matters most here
+**Recommendation: Exa for the in-app button, Clay for precise checks, Apollo only if you upgrade.**
+
+- **Exa** is the only source that can sit behind a "Find people" button in the Vercel app (an `EXA_API_KEY`
+  env var, server-side fetch). Its search is semantic, so results need a light parse to get name and title
+  from the profile text, and each person gets a confidence flag. Untested so far: the Exa connector here
+  still needs auth, so the first run is a 10-company trial to measure hit rate.
+- **Clay** has hard structured filters (`education.any(school_name ...)`, current title, per-company cap),
+  so it's the better tool for the UCLA branch and for filling gaps Exa misses. It runs from a Claude Code
+  session (MCP connector), not from the app.
+
+Earlier note on Clay: Clay has the one filter that matters most here
 (`education.any(school_name contains "UCLA")`), returns LinkedIn URLs, and runs against credits you already
 have. Apollo can't search people on the Free plan at all; the existing Apollo UI-link → Leadsfriday path in
 vertis-sync has a 500-contact minimum per order, which is too coarse for 2–3 hand-picked people per company.
@@ -59,7 +70,8 @@ create table people (
   branch          text not null check (branch in ('alumni','hiring_team','leadership','recruiting','poster','other')),
   is_ucla         boolean not null default false,
   rank            smallint,                   -- 1 = reach out first
-  source          text not null check (source in ('sheet_poster','clay','apollo','manual')),
+  source          text not null check (source in ('sheet_poster','exa','clay','apollo','manual')),
+  confidence      text check (confidence in ('high','medium','low')),  -- Exa matches are fuzzy
   outreach_status text not null default 'none' check (outreach_status in ('none','drafted','approved','sent','replied','skip')),
   last_contacted_at timestamptz,
   notes           text,
@@ -107,12 +119,13 @@ later.
 | Phase | What | Spend |
 |---|---|---|
 | 1 | `people` table, Companies tree view, People chip, LinkedIn search links, manual add, seed 48 job posters | none |
-| 2 | Clay "find people" run for tier 1–2 companies, preview + approval, `people_runs` log | Clay credits (estimate shown first) |
+| 2a | Exa "Find people" button in the app (per company or filtered batch), parse + rank, preview + approval, `people_runs` log | Exa credits (estimate shown first) |
+| 2b | Clay pass from a Claude Code session for UCLA alumni and companies Exa came back thin on | Clay credits |
 | 3 | GTM-21 drafts per person, GTM-22 sender reads `approved` people and writes back `sent` / `replied` | as per those issues |
 | opt | If Apollo is upgraded: Apollo search as a second source in the same run | Apollo plan |
 
 ## Decisions needed
 
-1. Use Clay (spare credits) as the people source? If yes, confirm which Clay account or workspace.
+1. Exa first (in-app button), with Clay for UCLA alumni and gaps? If yes: the Exa API key (I'll put it in Vercel env, never in chat) and which Clay workspace.
 2. Per-company cap: 3 per branch / top 3 overall OK?
 3. "Hiring team" titles: are Head of Growth / VP Sales / Head of RevOps / GTM Lead the right buckets?
