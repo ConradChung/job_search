@@ -18,8 +18,12 @@ export interface JobRow {
   location: string | null
   posted_at: string | null
   company_website: string | null
+  company_linkedin: string | null
+  job_poster_name: string | null
+  job_poster_title: string | null
+  job_poster_url: string | null
   board: string | null
 }
 
 export const JOB_COLUMNS =
-  'id, company, title, link, section, fit_tier, status, email_sent, notes, status_changed_at, liveness, funding_stage, salary_text, salary_min, salary_max, location, posted_at, company_website, board'
+  'id, company, title, link, section, fit_tier, status, email_sent, notes, status_changed_at, liveness, funding_stage, salary_text, salary_min, salary_max, location, posted_at, company_website, company_linkedin, job_poster_name, job_poster_title, job_poster_url, board'

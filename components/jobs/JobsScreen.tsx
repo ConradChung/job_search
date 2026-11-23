@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
-import { ExternalLink, RefreshCw, Search, StickyNote } from 'lucide-react'
+import { ExternalLink, Globe, Info, RefreshCw, Search, StickyNote } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHead } from '@/components/shell/PageHead'
 import { GlassCard } from '@/components/ui/glass-card'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { STATUSES, statusMeta, type Tone } from '@/lib/jobs/statuses'
 import type { JobRow } from '@/lib/jobs/types'
+import { TIERS, tierMeta } from '@/lib/jobs/tiers'
 
 const TONE: Record<Tone, string> = {
   wait: 'bg-amber/12 text-amber border-amber/25',
@@ -36,6 +37,7 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
   const [status, setStatus] = useState<string>('all')
   const [section, setSection] = useState<Section>('all')
   const [openNotes, setOpenNotes] = useState<number | null>(null)
+  const [showTierHelp, setShowTierHelp] = useState(false)
   const [syncing, startSync] = useTransition()
 
   // Keep local state in step with a server refresh (after a sync).
@@ -49,7 +51,7 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
     const by = (s: string) => jobs.filter((j) => j.status === s).length
     return [
       { label: 'Roles', value: jobs.length, hint: `${jobs.filter((j) => j.section === 'referrals').length} in referrals` },
-      { label: 'Tier 1', value: jobs.filter((j) => j.fit_tier === 1).length, hint: 'best fit' },
+      { label: 'Tier 1 roles', value: jobs.filter((j) => j.fit_tier === 1).length, hint: 'GTM / founding / growth engineer' },
       { label: 'Reached out', value: by('reached_out'), hint: 'messaged, not applied' },
       { label: 'Applied', value: by('applied'), hint: 'application in' },
       { label: 'Interviewing', value: by('interviewing') + by('offer'), hint: `${by('offer')} offer` },
@@ -153,8 +155,17 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
             label="Tier"
             value={tier}
             onChange={setTier}
-            options={[{ value: 'all', label: 'All tiers' }, ...[1, 2, 3, 4, 5].map((t) => ({ value: t, label: `T${t}` }))]}
+            options={[{ value: 'all', label: 'All tiers' }, ...TIERS.map((t) => ({ value: t.tier, label: `${t.tier} · ${t.short}` }))]}
           />
+          <button
+            type="button"
+            onClick={() => setShowTierHelp((v) => !v)}
+            aria-expanded={showTierHelp}
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] text-fg-46 transition-colors hover:text-fg"
+          >
+            <Info className="size-3.5" aria-hidden />
+            How tiers work
+          </button>
           <Segmented
             label="Section"
             value={section}
@@ -169,6 +180,25 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
             {visible.length} / {jobs.length}
           </span>
         </div>
+
+        {showTierHelp && (
+          <div className="border-t border-line px-[18px] py-3 text-[12px] text-fg-70">
+            <p className="mb-2 text-fg-46">
+              Fit tier ranks the <span className="text-fg">job title only</span> (not the company), set when the jobs were
+              scraped. The first rule that matches wins; 1 is the best fit.
+            </p>
+            <ul className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-5">
+              {TIERS.map((t) => (
+                <li key={t.tier} className="rounded-lg border border-line px-2.5 py-2">
+                  <div className="font-medium text-fg">
+                    Tier {t.tier} · {t.label}
+                  </div>
+                  <div className="mt-0.5 text-fg-46">{t.rule}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-1.5 border-t border-line px-[18px] py-2.5">
           <Chip active={status === 'all'} onClick={() => setStatus('all')}>
@@ -188,7 +218,7 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
             <table className="w-full border-collapse text-[12px]">
               <thead className="sticky top-0 z-[1] bg-surface text-left text-[11px] text-fg-46">
                 <tr>
-                  {['Company', 'Role', 'Tier', 'Status', 'Funding', 'Salary', 'Location', 'Posted', 'Live', ''].map((c, i) => (
+                  {['Company', 'Role', 'Posting', 'Fit tier', 'Status', 'Funding', 'Salary', 'Location', 'Posted', 'Live', ''].map((c, i) => (
                     <th
                       key={i}
                       scope="col"
@@ -209,31 +239,42 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
                     <tr className="border-b border-line/60 text-fg-70 transition-colors hover:bg-accent">
                       <td className="max-w-[180px] px-3 py-2.5 pl-[18px]">
                         <div className="flex items-center gap-1.5">
-                          {j.company_website ? (
-                            <a href={j.company_website} target="_blank" rel="noreferrer" className="truncate text-fg hover:underline">
-                              {j.company}
-                            </a>
-                          ) : (
-                            <span className="truncate text-fg">{j.company}</span>
+                          <span className="truncate text-fg">{j.company}</span>
+                          {j.company_website && (
+                            <IconLink href={j.company_website} label={`${j.company} website`}>
+                              <Globe className="size-3.5" aria-hidden />
+                            </IconLink>
+                          )}
+                          {j.company_linkedin && (
+                            <IconLink href={j.company_linkedin} label={`${j.company} on LinkedIn`}>
+                              <LinkedInMark />
+                            </IconLink>
                           )}
                           {j.section === 'referrals' && (
                             <span className="rounded-full border border-line px-1.5 text-[10px] text-fg-46">ref</span>
                           )}
                         </div>
                       </td>
-                      <td className="max-w-[300px] px-3 py-2.5">
+                      <td className="max-w-[280px] px-3 py-2.5">
+                        <span className="block truncate" title={j.title ?? undefined}>
+                          {j.title ?? 'Untitled role'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
                         <a
                           href={j.link}
                           target="_blank"
                           rel="noreferrer"
-                          className="group inline-flex max-w-full items-center gap-1 hover:text-fg"
-                          title={j.title ?? j.link}
+                          title={j.link}
+                          className="inline-flex h-6 items-center gap-1 rounded-full border border-line px-2 text-[11px] whitespace-nowrap text-fg-70 transition-colors hover:border-primary/40 hover:text-fg"
                         >
-                          <span className="truncate">{j.title ?? 'Untitled role'}</span>
-                          <ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" aria-hidden />
+                          {BOARD_LABEL[j.board ?? 'other'] ?? 'Job page'}
+                          <ExternalLink className="size-3" aria-hidden />
                         </a>
                       </td>
-                      <td className="px-3 py-2.5 font-mono tabular-nums">{j.fit_tier ?? '—'}</td>
+                      <td className="px-3 py-2.5">
+                        <TierPill tier={j.fit_tier} />
+                      </td>
                       <td className="px-3 py-2.5">
                         <StatusSelect value={j.status} onChange={(v) => patch(j.id, { status: v })} />
                       </td>
@@ -268,7 +309,7 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
                     </tr>
                     {openNotes === j.id && (
                       <tr className="border-b border-line/60 bg-accent/40">
-                        <td colSpan={10} className="px-[18px] py-3">
+                        <td colSpan={11} className="px-[18px] py-3">
                           <NotesEditor
                             initial={j.notes ?? ''}
                             onSave={(notes) => {
@@ -287,6 +328,55 @@ export function JobsScreen({ initial }: { initial: JobRow[] }) {
         )}
       </section>
     </div>
+  )
+}
+
+const BOARD_LABEL: Record<string, string> = {
+  ashby: 'Ashby',
+  greenhouse: 'Greenhouse',
+  lever: 'Lever',
+  linkedin: 'LinkedIn',
+  other: 'Job page',
+}
+
+function IconLink({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={label}
+      title={label}
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-fg-46 transition-colors hover:text-primary"
+    >
+      {children}
+    </a>
+  )
+}
+
+/** LinkedIn "in" mark (lucide dropped brand icons). */
+function LinkedInMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor" aria-hidden>
+      <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z" />
+    </svg>
+  )
+}
+
+function TierPill({ tier }: { tier: number | null }) {
+  const meta = tierMeta(tier)
+  if (!meta) return <span className="text-fg-46" title="No tier in the sheet">—</span>
+  return (
+    <span
+      title={`Tier ${meta.tier}: ${meta.label}. ${meta.rule}`}
+      className={cn(
+        'inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[11px] whitespace-nowrap',
+        meta.tier === 1 ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-70'
+      )}
+    >
+      <span className="font-mono tabular-nums">{meta.tier}</span>
+      {meta.short}
+    </span>
   )
 }
 

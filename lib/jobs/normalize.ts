@@ -19,6 +19,10 @@ export interface JobFacts {
   location: string | null
   posted_at: string | null
   company_website: string | null
+  company_linkedin: string | null
+  job_poster_name: string | null
+  job_poster_title: string | null
+  job_poster_url: string | null
   company_size: string | null
   industries: string | null
   sources: string | null
@@ -206,6 +210,10 @@ export function parseJobsFinal(csvRows: string[][]): ParseResult {
       location: text(get('location')),
       posted_at: date(get('postedAt')),
       company_website: text(get('companyWebsite')),
+      company_linkedin: text(get('companyLinkedinUrl')),
+      job_poster_name: text(get('jobPosterName')),
+      job_poster_title: text(get('jobPosterTitle')),
+      job_poster_url: text(get('jobPosterProfileUrl')),
       company_size: text(get('companySize')),
       industries: text(get('industries')),
       sources: text(get('sources')),
