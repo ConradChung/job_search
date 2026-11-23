@@ -8,8 +8,9 @@ const Patch = z
   .object({
     outreach_status: z.string().refine((v) => OUTREACH_VALUES.includes(v), 'unknown status').optional(),
     notes: z.string().max(4000).nullable().optional(),
+    draft: z.string().max(1000).nullable().optional(),
   })
-  .refine((b) => b.outreach_status !== undefined || b.notes !== undefined, 'nothing to update')
+  .refine((b) => b.outreach_status !== undefined || b.notes !== undefined || b.draft !== undefined, 'nothing to update')
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requireOwner())) return NextResponse.json({ error: 'forbidden' }, { status: 403 })

@@ -75,7 +75,7 @@ Targeting depends on company size, from `companyEmployeesCount` in the sheet (fa
 | 2 | Head of GTM or head of sales | Head of GTM, Head of Sales, Head of Growth, Head of RevOps, GTM Lead |
 | 3 | Adjacent but more senior | VP Sales, CRO, COO, Co-founder / CEO |
 
-**Medium (30 to 100): proposed default, owner to confirm.** A blend: these companies often have one
+**Medium (30 to 100): confirmed by the owner 2026-11-22.** A blend: these companies often have one
 recruiter and a real GTM leader, but the founder is less likely to be the right first touch.
 
 | Order | Target | Example titles |
@@ -202,3 +202,15 @@ Still open:
   co-founders.
 - **Run it:** Companies page → "Find people" (per company or for the filtered list, after a cost preview), or
   `npm run people -- --tier 2 --limit 50` (preview) then add `--yes`.
+
+## Drafts (GTM-21, 2026-11-22)
+
+- One LinkedIn connection note per person (under 280 characters), Claude Opus 5.5 at low effort with the
+  server-side refusal fallback on. About **$0.004 per note**.
+- Uses only the facts in `lib/drafts/profile.ts` (owner edits that file). Rules forbid inventing anything,
+  stating student / graduate status, or assuming things about the recipient's team.
+- Angle by branch: alumni lead with "fellow Bruin"; recruiters get role + fit; GTM leaders operator to
+  operator; executives brief with "who's the best person to talk to".
+- Review in the Companies tree: Copy, Edit, Redraft, Approve. Generating a note moves status none → drafted;
+  Approve → approved (what GTM-22's sender will pick up). Nothing is sent.
+- Batch: "Draft notes" button (cost preview) or `npm run drafts -- --limit 100 --yes`.

@@ -26,7 +26,9 @@ export interface PersonRow {
   outreach_status: string
   last_contacted_at: string | null
   notes: string | null
+  draft: string | null
+  draft_generated_at: string | null
 }
 
 export const PERSON_COLUMNS =
-  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes'
+  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, draft_generated_at'

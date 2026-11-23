@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, ExternalLink, Globe, Loader2, Plus, Search, Sparkles, X } from 'lucide-react'
+import { Check, ChevronRight, Copy, ExternalLink, Globe, Loader2, PenLine, Plus, RefreshCw, Search, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHead } from '@/components/shell/PageHead'
 import { GlassCard } from '@/components/ui/glass-card'
@@ -14,6 +14,9 @@ import type { CompanyView } from '@/lib/people/companies'
 import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
 import { BRANCH_LABEL, BRANCH_ORDER, EST_COST_PER_SEARCH, maxSearches, type Branch } from '@/lib/people/targets'
 import { OUTREACH, type PersonRow } from '@/lib/people/types'
+
+/** Measured 2026-11-22: about $0.004 per note; preview rounds up. */
+const DRAFT_COST = 0.006
 
 type PeopleFilter = 'all' | 'none' | 'has'
 type TierFilter = 'all' | 1 | 2
@@ -39,6 +42,8 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
   const [tier, setTier] = useState<TierFilter>(1)
   const [peopleFilter, setPeopleFilter] = useState<PeopleFilter>('all')
   const [confirming, setConfirming] = useState(false)
+  const [confirmingDrafts, setConfirmingDrafts] = useState(false)
+  const [drafting, setDrafting] = useState<Set<number>>(new Set())
   const [progress, setProgress] = useState<{ done: number; total: number; spent: number; current: string } | null>(null)
   const stopRef = useRef(false)
 
@@ -67,6 +72,51 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
 
   const unsearched = visible.filter((c) => !c.searchedAt)
   const estimate = (list: CompanyView[]) => list.reduce((n, c) => n + maxSearches(c.band), 0) * EST_COST_PER_SEARCH
+
+  const undrafted = visible.flatMap((c) => c.people.filter((p) => !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))
+
+  async function draftPerson(c: CompanyView, p: PersonRow, quiet = false): Promise<boolean> {
+    setDrafting((s) => new Set(s).add(p.id))
+    const res = await fetch(`/api/people/${p.id}/draft`, { method: 'POST' }).catch(() => null)
+    const body = await res?.json().catch(() => null)
+    setDrafting((s) => {
+      const n = new Set(s)
+      n.delete(p.id)
+      return n
+    })
+    if (!res?.ok) {
+      toast.error(`${p.full_name}: ${body?.error ?? 'draft failed'}`)
+      return false
+    }
+    patchPerson(c.key, p.id, body.person)
+    if (!quiet && body.tooLong) toast.warning('Draft is over 300 characters; trim it before sending.')
+    return true
+  }
+
+  async function draftAll(list: { c: CompanyView; p: PersonRow }[]) {
+    setConfirmingDrafts(false)
+    stopRef.current = false
+    let done = 0
+    for (let i = 0; i < list.length; i += 4) {
+      if (stopRef.current) break
+      setProgress({ done: i, total: list.length, spent: 0, current: list[i].p.full_name })
+      // Small parallel batches keep it quick without tripping rate limits.
+      const ok = await Promise.all(list.slice(i, i + 4).map(({ c, p }) => draftPerson(c, p, true)))
+      done += ok.filter(Boolean).length
+    }
+    setProgress(null)
+    toast.success(`Drafted ${done} notes`)
+  }
+
+  async function saveDraft(c: CompanyView, p: PersonRow, draft: string) {
+    const res = await fetch(`/api/people/${p.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draft }),
+    }).catch(() => null)
+    if (!res?.ok) return toast.error('Could not save the draft.')
+    patchPerson(c.key, p.id, await res.json())
+  }
 
   async function findPeople(list: CompanyView[]) {
     stopRef.current = false
@@ -147,13 +197,19 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
           busy ? (
             <Button variant="outline" onClick={() => (stopRef.current = true)}>
               <Loader2 className="animate-spin" aria-hidden />
-              {progress.done}/{progress.total} · ${progress.spent.toFixed(2)} · Stop
+              {progress.done}/{progress.total}{progress.spent ? ` · $${progress.spent.toFixed(2)}` : ''} · Stop
             </Button>
           ) : (
-            <Button onClick={() => setConfirming(true)} disabled={unsearched.length === 0}>
-              <Sparkles aria-hidden />
-              Find people · {unsearched.length}
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setConfirmingDrafts(true)} disabled={undrafted.length === 0}>
+                <PenLine aria-hidden />
+                Draft notes · {undrafted.length}
+              </Button>
+              <Button onClick={() => setConfirming(true)} disabled={unsearched.length === 0}>
+                <Sparkles aria-hidden />
+                Find people · {unsearched.length}
+              </Button>
+            </>
           )
         }
       />
@@ -169,6 +225,19 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
             Cancel
           </Button>
           <Button onClick={() => findPeople(unsearched)}>Run search</Button>
+        </GlassCard>
+      )}
+
+      {confirmingDrafts && (
+        <GlassCard size="sm" className="flex-row flex-wrap items-center gap-3 px-4">
+          <div className="min-w-0 flex-1 text-[13px] text-fg-70">
+            Draft LinkedIn notes for <span className="text-fg">{undrafted.length}</span> people in this view with Claude Opus 5.5: about{' '}
+            <span className="font-mono text-fg">${(undrafted.length * DRAFT_COST).toFixed(2)}</span>. Nothing is sent; you review each one.
+          </div>
+          <Button variant="ghost" onClick={() => setConfirmingDrafts(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => draftAll(undrafted)}>Draft notes</Button>
         </GlassCard>
       )}
 
@@ -281,7 +350,13 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
                       </Button>
                     </span>
                   </div>
-                  {isOpen && <CompanyTree company={c} onOutreach={setOutreach} onRemove={removePerson} onAdded={() => router.refresh()} />}
+                  {isOpen && (
+                    <CompanyTree
+                      company={c}
+                      actions={{ onOutreach: setOutreach, onRemove: removePerson, onDraft: (co, p) => draftPerson(co, p), onSaveDraft: saveDraft, drafting }}
+                      onAdded={() => router.refresh()}
+                    />
+                  )}
                 </li>
               )
             })}
@@ -292,17 +367,15 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
   )
 }
 
-function CompanyTree({
-  company: c,
-  onOutreach,
-  onRemove,
-  onAdded,
-}: {
-  company: CompanyView
+interface PersonActions {
   onOutreach: (c: CompanyView, p: PersonRow, v: string) => void
   onRemove: (c: CompanyView, p: PersonRow) => void
-  onAdded: () => void
-}) {
+  onDraft: (c: CompanyView, p: PersonRow) => void
+  onSaveDraft: (c: CompanyView, p: PersonRow, draft: string) => void
+  drafting: Set<number>
+}
+
+function CompanyTree({ company: c, actions, onAdded }: { company: CompanyView; actions: PersonActions; onAdded: () => void }) {
   const groups = BRANCH_ORDER.map((b) => ({
     branch: b,
     people: c.people.filter((p) => p.branch === b).sort((a, z) => (a.rank ?? 9) - (z.rank ?? 9)),
@@ -340,7 +413,7 @@ function CompanyTree({
                 <ul className="mt-1.5 ml-[3px] border-l border-line pl-4">
                   {g.people.map((p) => (
                     <Fragment key={p.id}>
-                      <PersonLine company={c} person={p} onOutreach={onOutreach} onRemove={onRemove} />
+                      <PersonLine company={c} person={p} actions={actions} />
                     </Fragment>
                   ))}
                 </ul>
@@ -370,20 +443,13 @@ function CompanyTree({
   )
 }
 
-function PersonLine({
-  company,
-  person: p,
-  onOutreach,
-  onRemove,
-}: {
-  company: CompanyView
-  person: PersonRow
-  onOutreach: (c: CompanyView, p: PersonRow, v: string) => void
-  onRemove: (c: CompanyView, p: PersonRow) => void
-}) {
+function PersonLine({ company, person: p, actions }: { company: CompanyView; person: PersonRow; actions: PersonActions }) {
+  const { onOutreach, onRemove, onDraft, onSaveDraft, drafting } = actions
   const meta = OUTREACH.find((o) => o.value === p.outreach_status) ?? OUTREACH[0]
+  const busy = drafting.has(p.id)
   return (
-    <li className="group flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-[12px]">
+    <li className="py-1.5 text-[12px]">
+      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1">
       <a href={p.linkedin_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-fg hover:text-primary">
         <LinkedInMark />
         <span>{p.full_name}</span>
@@ -422,7 +488,113 @@ function PersonLine({
           <X className="size-3.5" aria-hidden />
         </button>
       </span>
+      </div>
+      {p.draft ? (
+        <DraftBox
+          draft={p.draft}
+          busy={busy}
+          approved={p.outreach_status === 'approved' || p.outreach_status === 'sent' || p.outreach_status === 'replied'}
+          onSave={(d) => onSaveDraft(company, p, d)}
+          onRedraft={() => onDraft(company, p)}
+          onApprove={() => onOutreach(company, p, 'approved')}
+        />
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onDraft(company, p)}
+          className="mt-1 inline-flex items-center gap-1 text-[11px] text-fg-46 transition-colors hover:text-fg disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <PenLine className="size-3" aria-hidden />}
+          {busy ? 'Drafting…' : 'Draft note'}
+        </button>
+      )}
     </li>
+  )
+}
+
+function DraftBox({
+  draft,
+  busy,
+  approved,
+  onSave,
+  onRedraft,
+  onApprove,
+}: {
+  draft: string
+  busy: boolean
+  approved: boolean
+  onSave: (d: string) => void
+  onRedraft: () => void
+  onApprove: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(draft)
+  const [seenDraft, setSeenDraft] = useState(draft)
+  if (seenDraft !== draft) {
+    setSeenDraft(draft)
+    setValue(draft)
+  }
+  const len = (editing ? value : draft).length
+  const btn =
+    'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-fg-46 transition-colors hover:bg-muted hover:text-fg disabled:opacity-50'
+  const copy = () => {
+    navigator.clipboard.writeText(draft)
+    toast.success('Copied')
+  }
+  const cancel = () => {
+    setEditing(false)
+    setValue(draft)
+  }
+  const save = () => {
+    onSave(value)
+    setEditing(false)
+  }
+  return (
+    <div className="mt-1.5 rounded-lg border border-line bg-black/20 p-2.5">
+      {editing ? (
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          rows={4}
+          autoFocus
+          aria-label="Edit draft"
+          className="w-full resize-y bg-transparent text-[12px] leading-relaxed text-fg outline-none"
+        />
+      ) : (
+        <p className={cn('text-[12px] leading-relaxed whitespace-pre-wrap text-fg-70', busy && 'opacity-50')}>{draft}</p>
+      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <span className={cn('mr-auto font-mono text-[10px] tabular-nums', len > 300 ? 'text-red' : 'text-fg-46')}>{len}/300</span>
+        {editing ? (
+          <>
+            <button type="button" className={btn} onClick={cancel}>
+              Cancel
+            </button>
+            <button type="button" className={btn} onClick={save}>
+              <Check className="size-3" aria-hidden /> Save
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className={btn} onClick={copy}>
+              <Copy className="size-3" aria-hidden /> Copy
+            </button>
+            <button type="button" className={btn} onClick={() => setEditing(true)} disabled={busy}>
+              <PenLine className="size-3" aria-hidden /> Edit
+            </button>
+            <button type="button" className={btn} onClick={onRedraft} disabled={busy}>
+              {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <RefreshCw className="size-3" aria-hidden />} Redraft
+            </button>
+            {!approved && (
+              <button type="button" className={cn(btn, 'text-primary hover:text-primary')} onClick={onApprove} disabled={busy}>
+                <Check className="size-3" aria-hidden /> Approve
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

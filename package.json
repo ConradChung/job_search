@@ -10,9 +10,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "sync": "tsx --env-file=.env.local scripts/sync.ts",
-    "people": "tsx --env-file=.env.local scripts/find-people.ts"
+    "people": "tsx --env-file=.env.local scripts/find-people.ts",
+    "drafts": "tsx --env-file=.env.local scripts/drafts.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "@base-ui/react": "^1.9.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
