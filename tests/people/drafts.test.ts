@@ -69,21 +69,19 @@ describe('proof point selection (owner rules, latest)', () => {
     expect(rec({ category: 'sales', roleTitle: 'SDR' })?.key).toBe('sdr')
     for (const ctxv of ['web3', 'banking', '']) expect(rec({ cryptoOrFintech: !!ctxv, context: ctxv })?.key).not.toBe('coinbase')
   })
-  it('alumni vary: GTM Eng → Coinbase; crypto → Coinbase; fintech → Kalshi; founding / BD → Kalshi', () => {
-    expect(alum({})?.key).toBe('coinbase')
+  it('alumni: crypto → Coinbase, fintech → Kalshi; otherwise the systems line the recruiter did not get', () => {
     expect(alum({ cryptoOrFintech: true, context: 'web3 wallet' })?.key).toBe('coinbase')
     expect(alum({ cryptoOrFintech: true, context: 'payments' })?.key).toBe('kalshi')
-    expect(alum({ context: 'a prediction market' })?.key).toBe('kalshi')
-    expect(alum({ roleTitle: 'Founding GTM Engineer' })?.key).toBe('kalshi')
-    expect(alum({ category: 'partnerships_bd', roleTitle: 'Partnerships' })?.key).toBe('kalshi')
-    expect(alum({ category: 'sales', roleTitle: 'BDR' })?.key).toBe('kalshi')
+    expect(alum({})).toMatchObject({ key: 'systems', variant: 'pipelines' })
+    expect(rec({})).toMatchObject({ key: 'systems', variant: 'platform' })
+    expect(alum({ siblingTexts: ['…I build outbound lead pipelines for two startups…'] })).toMatchObject({ variant: 'platform' })
+    expect(rec({ siblingTexts: ['…built and shipped a full-stack GTM platform solo…'] })).toMatchObject({ variant: 'pipelines' })
+    expect(alum({ roleTitle: 'Founding GTM Engineer' })?.key).toBe('systems')
+    expect(alum({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('systems')
   })
-  it('AI "tokens" do not make a company crypto', () => {
-    expect(alum({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('coinbase') // GTM Eng alum rule, not crypto
-    expect(rec({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('systems')
-  })
-  it('Blockchain @ UCLA alumni: club opener, systems when it fits', () => {
-    expect(pick({ branch: 'blockchain_ucla' })?.key).toBe('systems')
+  it('Blockchain @ UCLA alumni get the club lines', () => {
+    expect(pick({ branch: 'blockchain_ucla' })?.key).toBe('kalshi')
+    expect(pick({ branch: 'blockchain_ucla', cryptoOrFintech: true, context: 'defi' })?.key).toBe('coinbase')
   })
   it('poor fit when nothing matches (ElevenLabs product growth role)', () => {
     expect(alum({ company: 'ElevenLabs', category: 'growth_eng_product', roleTitle: 'Website Growth Engineer' })).toBeNull()

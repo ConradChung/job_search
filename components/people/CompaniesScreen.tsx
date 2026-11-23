@@ -581,7 +581,14 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
       ) : null}
       {p.draft && p.followup ? (
         <div className="mt-1.5 rounded-lg border border-dashed border-line p-2.5">
-          <div className="mb-1 text-[10px] font-medium tracking-wide text-fg-46 uppercase">After they accept</div>
+          <div className="mb-1 flex items-center gap-2 text-[10px] font-medium tracking-wide text-fg-46 uppercase">
+            After they accept
+            {p.branch === 'recruiting' && company.primary?.status !== 'applied' && (
+              <span className="rounded-full border border-amber/30 bg-amber/10 px-1.5 text-amber normal-case" title="Apply before sending; then set the job to Applied and redraft for the applied wording">
+                apply first
+              </span>
+            )}
+          </div>
           <p className="text-[12px] leading-relaxed whitespace-pre-wrap text-fg-70">{p.followup}</p>
           <div className="mt-1.5 flex justify-end">
             <button

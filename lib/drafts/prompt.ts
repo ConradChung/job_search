@@ -17,6 +17,8 @@ export interface DraftContext {
   proof: ProofChoice
   /** Tool names only for technical recruiters and alumni in engineering. */
   allowTools: boolean
+  /** Status of the role in the tracker (recruiter after-accept message depends on it). */
+  roleStatus?: string | null
   /** Notes already drafted for other people at this company (must not be reused). */
   siblings: string[]
   limit: number
@@ -48,6 +50,8 @@ export const SCOPE_QUESTION = 'Is a March 2027 grad in scope for this role?'
 
 /** The single fact block a note may use, in the owner's words. Tool names stripped unless allowed. */
 export function proofFacts(p: ProofChoice, allowTools = true): { label: string; facts: string[]; short?: string } {
+  if (p.key === 'systems' && p.variant === 'platform') return { label: 'GTM systems', facts: ['Built and shipped a full-stack GTM platform solo.'] }
+  if (p.key === 'systems' && p.variant === 'pipelines') return { label: 'GTM systems', facts: ['I build outbound lead pipelines for two startups I co-founded.'] }
   if (p.key === 'systems' && !allowTools) {
     const s = PROFILE.proof.systems
     return { label: s.label, facts: s.facts.map((f) => f.replace(/\s+with tools like [^.]+/i, '')) }
@@ -225,12 +229,17 @@ Return only the message text.`
 export function followupUserPrompt(c: DraftContext, note: string): string {
   const ask =
     c.branch === 'recruiting'
-      ? `End with exactly: "${SCOPE_QUESTION}"`
+      ? `End with exactly: "${recruiterFollowupClose(c)}"`
       : `End with one light ask: whether they would be open to a quick chat about their team at ${c.company}. One question only.${(c.branch === 'alumni' || c.branch === 'blockchain_ucla') && !c.mentionRole ? ' Do not name the open role (they are not in its function).' : ''}`
   return [`Recipient: ${c.firstName}${c.title ? `, ${c.title}` : ''} at ${c.company} (${c.branch}).`, `Role: ${c.roleTitle ?? 'open role'}.`, `Connection note already sent:\n${note}`, ask].join('\n')
 }
 
-export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'>): string[] {
+/** Applied: name the application; otherwise the plain scope question (owner, 2026-11-23). */
+export function recruiterFollowupClose(c: Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle'>>): string {
+  return c.roleStatus === 'applied' ? `I've applied for the ${c.roleTitle ?? 'open'} role. Is a March 2027 grad in scope?` : SCOPE_QUESTION
+}
+
+export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'> & Partial<Pick<DraftContext, 'roleStatus' | 'roleTitle'>>): string[] {
   const problems: string[] = []
   const sentences = text.split(/(?<=[.?!])\s+/).filter((s) => s.trim())
   if (sentences.length < 2 || sentences.length > 4) problems.push('Write two or three sentences.')
@@ -239,7 +248,7 @@ export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 
   if (/\bblockchain club\b/i.test(text)) problems.push('Say "Blockchain @ UCLA".')
   if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader.')
   if (c.branch === 'recruiting') {
-    if (!text.trim().endsWith(SCOPE_QUESTION)) problems.push(`End with exactly: "${SCOPE_QUESTION}"`)
+    if (!text.trim().endsWith(recruiterFollowupClose(c))) problems.push(`End with exactly: "${recruiterFollowupClose(c)}"`)
     if (/cold-?email\w*\s+coinbase/i.test(text)) problems.push('Never use the Coinbase cold-email line with a recruiter.')
   }
   if ((text.match(/\?/g) ?? []).length > 1) problems.push('One question only.')

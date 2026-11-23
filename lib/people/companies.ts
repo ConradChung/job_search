@@ -124,10 +124,10 @@ export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: Ru
 
   return [...out.values()].sort(
     (a, b) =>
+      // Owner order: Blockchain @ UCLA alumni first, then NYC roles, then newest postings.
       Number(b.passes) - Number(a.passes) ||
-      a.track.localeCompare(b.track) ||
+      Number(b.people.some((p) => p.branch === 'blockchain_ucla')) - Number(a.people.some((p) => p.branch === 'blockchain_ucla')) ||
       Number(b.home) - Number(a.home) ||
-      (a.bestTier ?? 9) - (b.bestTier ?? 9) ||
       (b.latestPosted ?? '').localeCompare(a.latestPosted ?? '') ||
       a.name.localeCompare(b.name)
   )

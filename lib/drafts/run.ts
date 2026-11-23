@@ -32,7 +32,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     throw new DraftSkipped(`fit flags: ${fit.flags.filter((f) => f.level === 'block').map((f) => f.message).join('; ')}`)
   }
   const role = fit.primary
-  const { data: extra } = await db.from('jobs').select('title, crypto_or_fintech, description, raw').eq('id', role?.id ?? -1).maybeSingle()
+  const { data: extra } = await db.from('jobs').select('title, status, crypto_or_fintech, description, raw').eq('id', role?.id ?? -1).maybeSingle()
   const { data: sibs } = await db.from('people').select('draft').eq('company_key', p.company_key).neq('id', personId).not('draft', 'is', null)
   const proof = chooseProof({
     company: p.company,
@@ -42,6 +42,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     roleTitle: extra?.title ?? null,
     branch: p.branch,
     siblingCount: sibs?.length ?? 0,
+    siblingTexts: (sibs ?? []).map((s) => s.draft as string),
   })
   if (!proof) throw new DraftSkipped('poor fit: nothing in the profile matches this role')
 
@@ -51,6 +52,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     branch: p.branch,
     company: p.company,
     roleTitle: extra?.title ?? null,
+    roleStatus: extra?.status ?? null,
     mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,
     allowTools:
       (p.branch === 'recruiting' && TITLES.technicalRecruiting.test(p.title ?? '')) ||
