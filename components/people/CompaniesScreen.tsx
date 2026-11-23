@@ -8,7 +8,8 @@ import { PageHead } from '@/components/shell/PageHead'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Chip, Count, IconLink, LinkedInMark, Segmented, TONE, TierPill } from '@/components/ui/bits'
+import { CategoryPill, Chip, Count, FlagChips, IconLink, LinkedInMark, Segmented, TONE } from '@/components/ui/bits'
+import { PROFILE } from '@/lib/profile'
 import { cn } from '@/lib/utils'
 import type { CompanyView } from '@/lib/people/companies'
 import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
@@ -16,16 +17,11 @@ import { BRANCH_LABEL, BRANCH_ORDER, EST_COST_PER_SEARCH, maxSearches, type Bran
 import { OUTREACH, type PersonRow } from '@/lib/people/types'
 
 /** Measured 2026-11-22: about $0.004 per note; preview rounds up. */
-const DRAFT_COST = 0.006
+const DRAFT_COST = 0.008
 
 type PeopleFilter = 'all' | 'none' | 'has'
-type TierFilter = 'all' | 1 | 2
+type FitFilter = 'passes' | 'flagged' | 'all'
 
-const BAND_RULE: Record<SizeBand, string> = {
-  small: 'Head of recruiting + head of GTM / sales; no GTM head → founder / CEO / CRO',
-  medium: 'Recruiting + GTM leadership; no GTM head → CRO / VP Revenue; nothing → founder',
-  large: 'Sales recruiting lead → else head of recruiting / talent → else recruiters',
-}
 
 export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; openKey: string | null }) {
   const router = useRouter()
@@ -39,7 +35,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
   const [open, setOpen] = useState<Set<string>>(() => new Set(openKey ? [openKey] : []))
   const [query, setQuery] = useState('')
   const [band, setBand] = useState<SizeBand | 'all'>('all')
-  const [tier, setTier] = useState<TierFilter>(1)
+  const [fitFilter, setFitFilter] = useState<FitFilter>(openKey ? 'all' : 'passes')
   const [peopleFilter, setPeopleFilter] = useState<PeopleFilter>('all')
   const [confirming, setConfirming] = useState(false)
   const [confirmingDrafts, setConfirmingDrafts] = useState(false)
@@ -50,7 +46,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
   const stats = useMemo(() => {
     const people = companies.flatMap((c) => c.people)
     return [
-      { label: 'Companies', value: companies.length, hint: `${companies.filter((c) => c.bestTier === 1).length} with a tier 1 role` },
+      { label: 'Companies', value: companies.length, hint: `${companies.filter((c) => c.passes).length} pass fit flags` },
       { label: 'Searched', value: companies.filter((c) => c.searchedAt).length, hint: 'Exa people search run' },
       { label: 'People', value: people.length, hint: `${people.filter((p) => p.branch === 'poster').length} job posters` },
       { label: 'UCLA alumni', value: people.filter((p) => p.is_ucla).length, hint: 'warmest first touch' },
@@ -64,16 +60,16 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
     return companies.filter(
       (c) =>
         (band === 'all' || c.band === band) &&
-        (tier === 'all' || (c.bestTier != null && c.bestTier <= tier)) &&
+        (fitFilter === 'all' || (fitFilter === 'passes' ? c.canDraft : !c.canDraft)) &&
         (peopleFilter === 'all' || (peopleFilter === 'none' ? c.people.length === 0 : c.people.length > 0)) &&
         (!q || c.name.toLowerCase().includes(q) || c.people.some((p) => p.full_name.toLowerCase().includes(q)))
     )
-  }, [companies, query, band, tier, peopleFilter])
+  }, [companies, query, band, fitFilter, peopleFilter])
 
   const unsearched = visible.filter((c) => !c.searchedAt)
-  const estimate = (list: CompanyView[]) => list.reduce((n, c) => n + maxSearches(c.band), 0) * EST_COST_PER_SEARCH
+  const estimate = (list: CompanyView[]) => list.reduce((n, c) => n + maxSearches(c.band, c.track), 0) * EST_COST_PER_SEARCH
 
-  const undrafted = visible.flatMap((c) => c.people.filter((p) => !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))
+  const undrafted = visible.filter((c) => c.canDraft).flatMap((c) => c.people.filter((p) => !p.draft && p.outreach_status !== 'skip').map((p) => ({ c, p })))
 
   async function draftPerson(c: CompanyView, p: PersonRow, quiet = false): Promise<boolean> {
     setDrafting((s) => new Set(s).add(p.id))
@@ -96,16 +92,39 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
   async function draftAll(list: { c: CompanyView; p: PersonRow }[]) {
     setConfirmingDrafts(false)
     stopRef.current = false
+    // One company at a time per worker, people in order, so each note sees
+    // its colleagues' notes and can differ from them. Three companies in parallel.
+    const byCompany = new Map<string, { c: CompanyView; p: PersonRow }[]>()
+    for (const item of list) byCompany.set(item.c.key, [...(byCompany.get(item.c.key) ?? []), item])
+    const queue = [...byCompany.values()]
     let done = 0
-    for (let i = 0; i < list.length; i += 4) {
-      if (stopRef.current) break
-      setProgress({ done: i, total: list.length, spent: 0, current: list[i].p.full_name })
-      // Small parallel batches keep it quick without tripping rate limits.
-      const ok = await Promise.all(list.slice(i, i + 4).map(({ c, p }) => draftPerson(c, p, true)))
-      done += ok.filter(Boolean).length
-    }
+    let finished = 0
+    await Promise.all(
+      Array.from({ length: 3 }, async () => {
+        while (queue.length && !stopRef.current) {
+          const group = queue.shift()!
+          for (const { c, p } of group) {
+            if (stopRef.current) break
+            if (await draftPerson(c, p, true)) done++
+            finished++
+            setProgress({ done: finished, total: list.length, spent: 0, current: p.full_name })
+          }
+        }
+      })
+    )
     setProgress(null)
     toast.success(`Drafted ${done} notes`)
+  }
+
+  async function setOverride(c: CompanyView, value: boolean) {
+    const res = await fetch(`/api/companies/${encodeURIComponent(c.key)}/override`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fit_override: value }),
+    }).catch(() => null)
+    if (!res?.ok) return toast.error('Could not save the override.')
+    toast.success(value ? `${c.name}: drafting allowed despite fit flags` : `${c.name}: override removed`)
+    router.refresh()
   }
 
   async function saveDraft(c: CompanyView, p: PersonRow, draft: string) {
@@ -218,7 +237,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
         <GlassCard size="sm" className="flex-row flex-wrap items-center gap-3 px-4">
           <div className="min-w-0 flex-1 text-[13px] text-fg-70">
             Search <span className="text-fg">{unsearched.length}</span> companies not yet searched in this view: at most{' '}
-            <span className="font-mono text-fg">{unsearched.reduce((n, c) => n + maxSearches(c.band), 0)}</span> Exa searches, at most{' '}
+            <span className="font-mono text-fg">{unsearched.reduce((n, c) => n + maxSearches(c.band, c.track), 0)}</span> Exa searches, at most{' '}
             <span className="font-mono text-fg">${estimate(unsearched).toFixed(2)}</span> (usually about half).
           </div>
           <Button variant="ghost" onClick={() => setConfirming(false)}>
@@ -258,13 +277,13 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Company or person" aria-label="Search companies" className="pl-8" />
           </div>
           <Segmented
-            label="Best tier"
-            value={tier}
-            onChange={setTier}
+            label="Fit"
+            value={fitFilter}
+            onChange={setFitFilter}
             options={[
-              { value: 1, label: 'Tier 1' },
-              { value: 2, label: 'Tier 1–2' },
-              { value: 'all', label: 'All tiers' },
+              { value: 'passes', label: 'Passes fit flags' },
+              { value: 'flagged', label: 'Flagged' },
+              { value: 'all', label: 'All' },
             ]}
           />
           <Segmented
@@ -290,7 +309,6 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
               {BAND_LABEL[b]} <Count n={companies.filter((c) => c.band === b).length} />
             </Chip>
           ))}
-          {band !== 'all' && <span className="self-center pl-1 text-[11px] text-fg-46">Targets: {BAND_RULE[band]}</span>}
         </div>
 
         {visible.length === 0 ? (
@@ -324,11 +342,12 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
                         <LinkedInMark />
                       </IconLink>
                     )}
-                    <span className="hidden rounded-full border border-line px-2 py-0.5 text-[11px] whitespace-nowrap text-fg-46 sm:inline" title={BAND_RULE[c.band]}>
+                    <span className="hidden rounded-full border border-line px-2 py-0.5 text-[11px] whitespace-nowrap text-fg-46 sm:inline" title={c.rule}>
                       {c.band[0].toUpperCase() + c.band.slice(1)}
                       {c.employees ? ` · ${c.employees.toLocaleString()}` : ''}
                     </span>
-                    <TierPill tier={c.bestTier} />
+                    <CategoryPill category={c.primary?.category ?? null} confidence={c.primary?.category_confidence ?? null} />
+                    <FlagChips flags={c.flags} override={c.override} compact />
                     <span className="hidden text-fg-46 md:inline">
                       {c.roles.length} role{c.roles.length === 1 ? '' : 's'}
                     </span>
@@ -336,6 +355,9 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
                       <span className={cn('font-mono tabular-nums', c.people.length ? 'text-fg' : 'text-fg-46')}>
                         {c.people.length} {c.people.length === 1 ? 'person' : 'people'}
                       </span>
+                      {c.people.some((p) => p.in_blockchain_ucla) && (
+                        <span className="rounded-full border border-primary/40 bg-primary/12 px-1.5 text-[10px] text-fg">B@UCLA</span>
+                      )}
                       {c.people.some((p) => p.is_ucla) && (
                         <span className="rounded-full border border-primary/40 bg-primary/12 px-1.5 text-[10px] text-fg">UCLA</span>
                       )}
@@ -344,7 +366,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
                         variant={c.searchedAt ? 'ghost' : 'outline'}
                         disabled={busy}
                         onClick={() => findPeople([c])}
-                        title={`At most ${maxSearches(c.band)} Exa searches, about $${(maxSearches(c.band) * EST_COST_PER_SEARCH).toFixed(2)}`}
+                        title={`At most ${maxSearches(c.band, c.track)} Exa searches, about $${(maxSearches(c.band, c.track) * EST_COST_PER_SEARCH).toFixed(2)}`}
                       >
                         {c.searchedAt ? 'Re-run' : 'Find people'}
                       </Button>
@@ -354,6 +376,7 @@ export function CompaniesScreen({ initial, openKey }: { initial: CompanyView[]; 
                     <CompanyTree
                       company={c}
                       actions={{ onOutreach: setOutreach, onRemove: removePerson, onDraft: (co, p) => draftPerson(co, p), onSaveDraft: saveDraft, drafting }}
+                      onOverride={(v) => setOverride(c, v)}
                       onAdded={() => router.refresh()}
                     />
                   )}
@@ -375,7 +398,17 @@ interface PersonActions {
   drafting: Set<number>
 }
 
-function CompanyTree({ company: c, actions, onAdded }: { company: CompanyView; actions: PersonActions; onAdded: () => void }) {
+function CompanyTree({
+  company: c,
+  actions,
+  onAdded,
+  onOverride,
+}: {
+  company: CompanyView
+  actions: PersonActions
+  onAdded: () => void
+  onOverride: (v: boolean) => void
+}) {
   const groups = BRANCH_ORDER.map((b) => ({
     branch: b,
     people: c.people.filter((p) => p.branch === b).sort((a, z) => (a.rank ?? 9) - (z.rank ?? 9)),
@@ -385,7 +418,28 @@ function CompanyTree({ company: c, actions, onAdded }: { company: CompanyView; a
   return (
     <div className="grid gap-4 bg-accent/30 px-[18px] pt-1 pb-4 pl-[52px] lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="min-w-0">
-        <div className="mb-2 text-[11px] text-fg-46">{BAND_RULE[c.band]}</div>
+        <div className="mb-2 flex flex-col gap-1.5 text-[11px] text-fg-46">
+          <div>
+            <span className="text-fg-70">
+              {c.ruleApplied ? 'Routing applied' : c.searchedAt ? 'Searched with the old sales-only rule; next search' : 'Routing (not searched yet)'}:
+            </span>{' '}
+            {c.rule}
+          </div>
+          {c.flags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FlagChips flags={c.flags} override={c.override} />
+              {!c.passes && (
+                <button
+                  type="button"
+                  onClick={() => onOverride(!c.override)}
+                  className="rounded-full border border-line px-2 py-0.5 text-[11px] text-fg-70 transition-colors hover:border-primary/40 hover:text-fg"
+                >
+                  {c.override ? 'Remove override' : 'Override: draft anyway'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         {groups.length === 0 ? (
           <p className="text-[12px] text-fg-46">
             {c.searchedAt ? 'Search found nobody matching the targets.' : 'No people yet. Run Find people, or search LinkedIn:'}{' '}
@@ -428,8 +482,8 @@ function CompanyTree({ company: c, actions, onAdded }: { company: CompanyView; a
           <ul className="flex flex-col gap-1">
             {c.roles.map((r) => (
               <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                <TierPill tier={r.tier} />
-                <a href={r.link} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 text-fg-70 hover:text-fg">
+                <CategoryPill category={r.category} confidence={r.category_confidence} />
+                <a href={r.link} target="_blank" rel="noreferrer" className={cn('inline-flex min-w-0 items-center gap-1 text-fg-70 hover:text-fg', r.liveness === 'dead' && 'line-through opacity-60')} title={r.liveness === 'dead' ? 'Posting closed' : undefined}>
                   <span className="truncate">{r.title ?? 'Untitled role'}</span>
                   <ExternalLink className="size-3 shrink-0 opacity-60" aria-hidden />
                 </a>
@@ -498,6 +552,8 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
           onRedraft={() => onDraft(company, p)}
           onApprove={() => onOutreach(company, p, 'approved')}
         />
+      ) : !company.canDraft ? (
+        <span className="mt-1 inline-block text-[11px] text-fg-46">Drafting blocked by fit flags</span>
       ) : (
         <button
           type="button"
@@ -565,7 +621,9 @@ function DraftBox({
         <p className={cn('text-[12px] leading-relaxed whitespace-pre-wrap text-fg-70', busy && 'opacity-50')}>{draft}</p>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        <span className={cn('mr-auto font-mono text-[10px] tabular-nums', len > 300 ? 'text-red' : 'text-fg-46')}>{len}/300</span>
+        <span className={cn('mr-auto font-mono text-[10px] tabular-nums', len > PROFILE.noteLimit ? 'text-red' : 'text-fg-46')}>
+          {len}/{PROFILE.noteLimit}
+        </span>
         {editing ? (
           <>
             <button type="button" className={btn} onClick={cancel}>

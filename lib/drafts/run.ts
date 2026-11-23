@@ -1,36 +1,55 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { PROFILE } from '@/lib/profile'
 import { generateDraft, type DraftClient } from './generate'
 import { firstName, type DraftContext } from './prompt'
+import { chooseProof } from './proof'
+import { loadCompany } from '@/lib/people/run'
+import { functionScore } from '@/lib/people/targets'
+import { trackOf } from '@/lib/jobs/categories'
 
-/** Context for one person: their row plus the company's best-fit open role. */
-export async function draftContext(db: SupabaseClient, personId: number): Promise<{ ctx: DraftContext; status: string } | null> {
+/** Drafting was skipped on purpose (fit flags, poor fit). Not an error. */
+export class DraftSkipped extends Error {}
+
+/**
+ * Everything a note needs: the person, the company's primary role, the proof
+ * point for that role, and the notes already written to their colleagues.
+ * Throws DraftSkipped when the fit flags block drafting (and the owner hasn't
+ * overridden them) or when no proof point honestly matches the role.
+ */
+export async function draftContext(db: SupabaseClient, personId: number) {
   const { data: p, error } = await db
     .from('people')
-    .select('id, company_key, company, full_name, title, branch, is_ucla, size_band, outreach_status')
+    .select('id, company_key, company, full_name, title, branch, outreach_status')
     .eq('id', personId)
     .maybeSingle()
   if (error) throw new Error(`load person: ${error.message}`)
   if (!p) return null
-  const { data: roles } = await db
-    .from('jobs')
-    .select('title, fit_tier, posted_at')
-    .eq('company_key', p.company_key)
-    .neq('status', 'not_fit')
-    .order('fit_tier', { ascending: true, nullsFirst: false })
-    .order('posted_at', { ascending: false, nullsFirst: false })
-    .limit(1)
-  return {
-    status: p.outreach_status,
-    ctx: {
-      firstName: firstName(p.full_name),
-      title: p.title,
-      branch: p.branch,
-      isUcla: p.is_ucla,
-      company: p.company,
-      sizeBand: p.size_band,
-      roleTitle: roles?.[0]?.title ?? null,
-    },
+
+  const loaded = await loadCompany(db, p.company_key)
+  if (!loaded) throw new DraftSkipped('no roles for this company')
+  const { fit } = loaded
+  if (!fit.canDraft) {
+    throw new DraftSkipped(`fit flags: ${fit.flags.filter((f) => f.level === 'block').map((f) => f.message).join('; ')}`)
   }
+  const role = fit.primary
+  const { data: extra } = await db.from('jobs').select('title, crypto_or_fintech').eq('id', role?.id ?? -1).maybeSingle()
+  const proof = chooseProof(role?.category ?? null, extra?.crypto_or_fintech ?? null)
+  if (!proof) throw new DraftSkipped('poor fit: nothing in the profile matches this role')
+
+  const { data: sibs } = await db.from('people').select('draft').eq('company_key', p.company_key).neq('id', personId).not('draft', 'is', null)
+
+  const ctx: DraftContext = {
+    firstName: firstName(p.full_name),
+    title: p.title,
+    branch: p.branch,
+    company: p.company,
+    roleTitle: extra?.title ?? null,
+    mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,
+    proof,
+    siblings: (sibs ?? []).map((s) => s.draft as string),
+    limit: PROFILE.noteLimit,
+  }
+  return { ctx, status: p.outreach_status as string }
 }
 
 /**
@@ -50,5 +69,5 @@ export async function draftForPerson(db: SupabaseClient, client: DraftClient, pe
   if (loaded.status === 'none') update.outreach_status = 'drafted'
   const { error } = await db.from('people').update(update).eq('id', personId)
   if (error) throw new Error(`save draft: ${error.message}`)
-  return { ...r, personId }
+  return { ...r, personId, proof: loaded.ctx.proof }
 }

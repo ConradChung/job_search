@@ -1,10 +1,9 @@
 /**
- * Find people at companies with Exa: `npm run people -- [options]`
+ * Find people at companies that pass the fit flags: `npm run people -- [options]`
  *
- *   --tier 2         only companies with a role of tier <= 2 (default 1)
- *   --limit 10       how many companies (default 10)
- *   --company "key"  one company by company_key (ignores tier/limit)
- *   --rerun          include companies that already had an Exa run
+ *   --limit 300      how many companies (default 300)
+ *   --company "key"  one company by company_key (ignores the fit filter)
+ *   --new-only       skip companies already searched
  *   --yes            actually run (without it: preview + cost estimate only)
  */
 import { createClient } from '@supabase/supabase-js'
@@ -12,6 +11,7 @@ import { exaSearcher } from '../lib/people/exa'
 import { runForCompany, loadCompany } from '../lib/people/run'
 import { sizeBand } from '../lib/people/size'
 import { EST_COST_PER_SEARCH, maxSearches } from '../lib/people/targets'
+import { companyFit } from '../lib/jobs/fit'
 
 const args = process.argv.slice(2)
 const flag = (n: string) => args.includes(`--${n}`)
@@ -29,28 +29,32 @@ async function main() {
   if (opt('company', '')) {
     keys = [opt('company', '')]
   } else {
-    const tier = Number(opt('tier', '1'))
-    const limit = Number(opt('limit', '10'))
     const { data: jobs, error } = await db
       .from('jobs')
-      .select('company_key, fit_tier, posted_at')
-      .lte('fit_tier', tier)
-      .neq('status', 'not_fit')
-      .order('posted_at', { ascending: false, nullsFirst: false })
+      .select('id, company_key, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date')
     if (error) throw new Error(error.message)
+    const { data: overrides } = await db.from('company_settings').select('company_key').eq('fit_override', true)
+    const forced = new Set((overrides ?? []).map((o) => o.company_key))
+    const byCompany = new Map<string, NonNullable<typeof jobs>>()
+    for (const j of jobs ?? []) byCompany.set(j.company_key, [...(byCompany.get(j.company_key) ?? []), j])
     const { data: runs } = await db.from('people_runs').select('company_key').is('error', null)
-    const done = new Set(flag('rerun') ? [] : (runs ?? []).map((r) => r.company_key))
-    keys = [...new Set((jobs ?? []).map((j) => j.company_key))].filter((k) => !done.has(k)).slice(0, limit)
+    const searched = new Set((runs ?? []).map((r) => r.company_key))
+    keys = [...byCompany.entries()]
+      .filter(([k, roles]) => companyFit(roles, forced.has(k)).canDraft)
+      .map(([k]) => k)
+      .filter((k) => !flag('new-only') || !searched.has(k))
+      .slice(0, Number(opt('limit', '300')))
   }
 
   let maxTotal = 0
-  const plan: { key: string; name: string; band: string; employees: number | null; domain: string | null }[] = []
+  const plan: { key: string; name: string; band: string; track: string; employees: number | null }[] = []
   for (const k of keys) {
-    const c = await loadCompany(db, k)
-    if (!c) continue
+    const loaded = await loadCompany(db, k)
+    if (!loaded) continue
+    const c = loaded.input
     const band = sizeBand(c.employees, c.size_text)
-    maxTotal += maxSearches(band)
-    plan.push({ key: k, name: c.company, band, employees: c.employees, domain: c.domain })
+    maxTotal += maxSearches(band, c.track)
+    plan.push({ key: k, name: c.company, band, track: c.track, employees: c.employees })
   }
   console.table(plan)
   console.log(`${plan.length} companies, at most ${maxTotal} searches, at most ~$${(maxTotal * EST_COST_PER_SEARCH).toFixed(2)}`)
@@ -66,7 +70,7 @@ async function main() {
       const r = await runForCompany(db, p.key, search)
       spent += r.cost
       console.log(
-        `${r.company} [${r.band}] ${r.searches} searches $${r.cost.toFixed(3)} · ${r.found} at company · saved ${r.saved}: ` +
+        `${r.company} [${r.band}/${r.track}] ${r.searches} searches $${r.cost.toFixed(3)} · ${r.found} at company · saved ${r.saved}: ` +
           r.people.map((x) => `${x.branch}:${x.full_name} (${x.title})`).join('; ')
       )
     } catch (err) {

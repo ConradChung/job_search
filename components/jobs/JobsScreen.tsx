@@ -11,9 +11,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { STATUSES, statusMeta } from '@/lib/jobs/statuses'
-import { Chip, Count, IconLink, LinkedInMark, Segmented, TONE, TierPill } from '@/components/ui/bits'
+import { CategoryPill, Chip, Count, IconLink, LinkedInMark, Segmented, TONE } from '@/components/ui/bits'
 import type { JobRow } from '@/lib/jobs/types'
-import { TIERS } from '@/lib/jobs/tiers'
+import { CATEGORIES, CATEGORY_KEYS, type Category } from '@/lib/jobs/categories'
 
 const LIVENESS: Record<JobRow['liveness'], { dot: string; label: string }> = {
   live: { dot: 'bg-green', label: 'Live' },
@@ -27,7 +27,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
   const router = useRouter()
   const [jobs, setJobs] = useState(initial)
   const [query, setQuery] = useState('')
-  const [tier, setTier] = useState<number | 'all'>('all')
+  const [category, setCategory] = useState<Category | 'all'>('all')
   const [status, setStatus] = useState<string>('all')
   const [section, setSection] = useState<Section>('all')
   const [openNotes, setOpenNotes] = useState<number | null>(null)
@@ -45,7 +45,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
     const by = (s: string) => jobs.filter((j) => j.status === s).length
     return [
       { label: 'Roles', value: jobs.length, hint: `${jobs.filter((j) => j.section === 'referrals').length} in referrals` },
-      { label: 'Tier 1 roles', value: jobs.filter((j) => j.fit_tier === 1).length, hint: 'GTM / founding / growth engineer' },
+      { label: 'GTM Eng roles', value: jobs.filter((j) => j.category === 'gtm_eng').length, hint: `${jobs.filter((j) => j.category === 'gtm_eng' && j.liveness !== 'dead').length} not closed` },
       { label: 'Reached out', value: by('reached_out'), hint: 'messaged, not applied' },
       { label: 'Applied', value: by('applied'), hint: 'application in' },
       { label: 'Interviewing', value: by('interviewing') + by('offer'), hint: `${by('offer')} offer` },
@@ -67,7 +67,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
     const q = query.trim().toLowerCase()
     return jobs.filter(
       (j) =>
-        (tier === 'all' || j.fit_tier === tier) &&
+        (category === 'all' || j.category === category) &&
         (status === 'all' || j.status === status) &&
         (section === 'all' || j.section === section) &&
         (!q ||
@@ -75,7 +75,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
           (j.title ?? '').toLowerCase().includes(q) ||
           (j.location ?? '').toLowerCase().includes(q))
     )
-  }, [jobs, query, tier, status, section])
+  }, [jobs, query, category, status, section])
 
   async function patch(id: number, body: { status?: string; notes?: string | null }) {
     const before = jobs.find((j) => j.id === id)
@@ -146,10 +146,13 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
             />
           </div>
           <Segmented
-            label="Tier"
-            value={tier}
-            onChange={setTier}
-            options={[{ value: 'all', label: 'All tiers' }, ...TIERS.map((t) => ({ value: t.tier, label: `${t.tier} · ${t.short}` }))]}
+            label="Category"
+            value={category}
+            onChange={setCategory}
+            options={[
+              { value: 'all', label: 'All' },
+              ...(['gtm_eng', 'growth_eng_product', 'sales', 'revops'] as const).map((k) => ({ value: k, label: CATEGORIES[k].label })),
+            ]}
           />
           <button
             type="button"
@@ -158,7 +161,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
             className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] text-fg-46 transition-colors hover:text-fg"
           >
             <Info className="size-3.5" aria-hidden />
-            How tiers work
+            How categories work
           </button>
           <Segmented
             label="Section"
@@ -178,16 +181,15 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
         {showTierHelp && (
           <div className="border-t border-line px-[18px] py-3 text-[12px] text-fg-70">
             <p className="mb-2 text-fg-46">
-              Fit tier ranks the <span className="text-fg">job title only</span> (not the company), set when the jobs were
-              scraped. The first rule that matches wins; 1 is the best fit.
+              Category is set by Claude from the <span className="text-fg">actual posting</span> (department and description), not
+              title keywords. A dashed pill marked &ldquo;title only&rdquo; means no posting text was available, so it is a low-confidence
+              guess. Only GTM Eng passes the fit flags.
             </p>
-            <ul className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-5">
-              {TIERS.map((t) => (
-                <li key={t.tier} className="rounded-lg border border-line px-2.5 py-2">
-                  <div className="font-medium text-fg">
-                    Tier {t.tier} · {t.label}
-                  </div>
-                  <div className="mt-0.5 text-fg-46">{t.rule}</div>
+            <ul className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-4">
+              {CATEGORY_KEYS.map((k) => (
+                <li key={k} className="rounded-lg border border-line px-2.5 py-2">
+                  <div className="font-medium text-fg">{CATEGORIES[k].label}</div>
+                  <div className="mt-0.5 text-fg-46">{CATEGORIES[k].hint}</div>
                 </li>
               ))}
             </ul>
@@ -212,7 +214,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
             <table className="w-full border-collapse text-[12px]">
               <thead className="sticky top-0 z-[1] bg-surface text-left text-[11px] text-fg-46">
                 <tr>
-                  {['Company', 'Role', 'Posting', 'Fit tier', 'Status', 'People', 'Funding', 'Salary', 'Location', 'Posted', 'Live', ''].map((c, i) => (
+                  {['Company', 'Role', 'Posting', 'Category', 'Status', 'People', 'Funding', 'Salary', 'Location', 'Posted', 'Live', ''].map((c, i) => (
                     <th
                       key={i}
                       scope="col"
@@ -267,7 +269,7 @@ export function JobsScreen({ initial, peopleCounts }: { initial: JobRow[]; peopl
                         </a>
                       </td>
                       <td className="px-3 py-2.5">
-                        <TierPill tier={j.fit_tier} />
+                        <CategoryPill category={j.category} confidence={j.category_confidence} />
                       </td>
                       <td className="px-3 py-2.5">
                         <StatusSelect value={j.status} onChange={(v) => patch(j.id, { status: v })} />

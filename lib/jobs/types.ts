@@ -12,6 +12,8 @@ export interface JobRow {
   notes: string | null
   status_changed_at: string | null
   liveness: 'unchecked' | 'live' | 'dead'
+  category: string | null
+  category_confidence: string | null
   funding_stage: string | null
   salary_text: string | null
   salary_min: number | null
@@ -27,4 +29,4 @@ export interface JobRow {
 }
 
 export const JOB_COLUMNS =
-  'id, company, company_key, title, link, section, fit_tier, status, email_sent, notes, status_changed_at, liveness, funding_stage, salary_text, salary_min, salary_max, location, posted_at, company_website, company_linkedin, job_poster_name, job_poster_title, job_poster_url, board'
+  'id, company, company_key, title, link, section, fit_tier, status, email_sent, notes, status_changed_at, liveness, category, category_confidence, funding_stage, salary_text, salary_min, salary_max, location, posted_at, company_website, company_linkedin, job_poster_name, job_poster_title, job_poster_url, board'

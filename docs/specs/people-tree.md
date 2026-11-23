@@ -214,3 +214,27 @@ Still open:
 - Review in the Companies tree: Copy, Edit, Redraft, Approve. Generating a note moves status none → drafted;
   Approve → approved (what GTM-22's sender will pick up). Nothing is sent.
 - Batch: "Draft notes" button (cost preview) or `npm run drafts -- --limit 100 --yes`.
+
+## Classification, routing by department, fit flags (2026-11-23)
+
+Owner brief: the ElevenLabs "Website Growth Engineer" was tagged GTM Eng from its title and drafted with
+outbound proof points, though it is a product engineering role (CRO, SEO, programmatic pages). Fixes:
+
+- **Postings:** descriptions come from the gtm-job-scrape Apify datasets (`descriptionText`, kept going forward),
+  else the Ashby / Greenhouse / Lever APIs; LinkedIn's public page is a one-try fallback (429 = left unchecked).
+  The same fetch sets live / dead (GTM-20). `npm run enrich`.
+- **Classifier** (`lib/jobs/classify.ts`): Claude Opus 5.5 reads department + description and returns category
+  (GTM Eng only for revenue-systems work; "Growth Eng (product)" for CRO / SEO / product growth), seniority, work
+  mode / locations, start requirement, crypto-or-fintech. Title-only input is low confidence and shown dashed.
+  Closed postings with no text get a free title guess (low). `npm run classify`.
+- **Fit flags** (`lib/jobs/fit.ts`, constraints in `lib/profile.ts`): not GTM Eng, senior or above, unmet
+  location, immediate start / start before March 2027 → block drafting until the owner overrides; mid-level warns.
+- **Routing** (`lib/people/targets.ts`): sales/GTM roles keep the size-band chain; engineering/product roles go
+  technical recruiters → head of recruiting / talent → recruiters. The applied rule is stored per run and shown.
+- **Selection:** leadership / executive / fractional recruiters skipped unless the role is director+; alumni
+  ranked by closeness to the role's function; new **Blockchain @ UCLA alumni** group (ranked above UCLA alumni,
+  detected from experience, education activities or organizations). Full profile text is stored per person.
+- **Drafts:** facts and proof points in `lib/profile.ts`, one proof point per note chosen in code (club for crypto /
+  fintech / partnerships, systems for GTM / RevOps / sales, poor fit = no draft); no internal names; one ask;
+  alumni get a question about their team; recruiters "am I in scope"; siblings differ (checked in code); note
+  limit 250 from config.

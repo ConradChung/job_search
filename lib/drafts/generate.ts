@@ -1,14 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { cleanDraft, MAX_CHARS, SYSTEM_PROMPT, TARGET_CHARS, userPrompt, type DraftContext } from './prompt'
+import { cleanDraft, draftProblems, systemPrompt, userPrompt, type DraftContext } from './prompt'
 
 export const DRAFT_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6, cacheRead: 0.2 / 1e6, cacheWrite: 5 / 1e6 }
+const MAX_ATTEMPTS = 3
 
 export interface DraftResult {
   text: string
   model: string
   cost: number
-  tooLong: boolean
+  /** Rule problems still present after the retries (empty = clean). */
+  problems: string[]
 }
 
 type Usage = {
@@ -33,24 +35,26 @@ export interface DraftClient {
 }
 
 /**
- * One connection note. Opus 5.5 at low effort (a short, simple task), with
- * the server-side refusal fallback on. If the note runs over the LinkedIn
- * limit, ask once for a shorter version in the same conversation.
+ * One connection note. Opus 5.5 at low effort with the server-side refusal
+ * fallback on. Rules the prompt can't guarantee (length, internal names, one
+ * question, sibling overlap) are checked in code; on a violation the model is
+ * told what's wrong and asked again, up to MAX_ATTEMPTS.
  */
 export async function generateDraft(client: DraftClient, ctx: DraftContext): Promise<DraftResult> {
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: userPrompt(ctx) }]
   let cost = 0
   let model = DRAFT_MODEL
   let text = ''
+  let problems: string[] = []
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const response = await client.beta.messages.create({
       model: DRAFT_MODEL,
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: { effort: 'low' },
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      system: systemPrompt(ctx.proof, ctx.limit),
       messages,
     })
     cost += costOf(response.usage as Usage)
@@ -65,10 +69,11 @@ export async function generateDraft(client: DraftClient, ctx: DraftContext): Pro
         .join('')
     )
     if (!text) throw new Error('empty draft')
-    if (text.length <= MAX_CHARS) break
+    problems = draftProblems(text, ctx)
+    if (!problems.length) break
     messages.push({ role: 'assistant', content: response.content })
-    messages.push({ role: 'user', content: `That is ${text.length} characters. Rewrite it under ${TARGET_CHARS} characters, same facts.` })
+    messages.push({ role: 'user', content: `Rewrite it. ${problems.join(' ')}` })
   }
 
-  return { text, model, cost, tooLong: text.length > MAX_CHARS }
+  return { text, model, cost, problems }
 }

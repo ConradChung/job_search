@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit",
     "sync": "tsx --env-file=.env.local scripts/sync.ts",
     "people": "tsx --env-file=.env.local scripts/find-people.ts",
-    "drafts": "tsx --env-file=.env.local scripts/drafts.ts"
+    "drafts": "tsx --env-file=.env.local scripts/drafts.ts",
+    "enrich": "tsx --env-file=.env.local scripts/enrich-jobs.ts",
+    "classify": "tsx --env-file=.env.local scripts/classify-jobs.ts",
+    "reselect": "tsx --env-file=.env.local scripts/apply-selection.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

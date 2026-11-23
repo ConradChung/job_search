@@ -37,6 +37,12 @@ export interface JobInsert extends JobFacts {
   email_sent: string | null
 }
 
+/** Posting text from the scrape (gtm-job-scrape keeps Apify's descriptionText), when the sheet has it. */
+export function descriptionOf(row: JobInsert): string | null {
+  const d = row.raw.description ?? row.raw.descriptionText
+  return d && d.trim().length >= 400 ? d.trim() : null
+}
+
 export function boardOf(link: string): Board {
   let host = ''
   try {

@@ -20,6 +20,7 @@ export interface PersonRow {
   branch: Branch
   level: number | null
   is_ucla: boolean
+  in_blockchain_ucla: boolean
   rank: number | null
   source: string
   confidence: 'high' | 'medium' | 'low' | null
@@ -31,4 +32,4 @@ export interface PersonRow {
 }
 
 export const PERSON_COLUMNS =
-  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, draft_generated_at'
+  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, draft_generated_at'

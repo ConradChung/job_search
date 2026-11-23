@@ -21,11 +21,13 @@ async function all<T>(table: string, columns: string): Promise<T[]> {
 
 /** The middleware has already passed the owner check for this route. */
 export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ open?: string }> }) {
-  const [jobs, people, runs] = await Promise.all([
+  const [jobs, people, runs, settings] = await Promise.all([
     all<CompanyJob>('jobs', COMPANY_JOB_COLUMNS),
     all<PersonRow>('people', PERSON_COLUMNS),
-    all<RunSummary>('people_runs', 'id, company_key, cost_usd, error, finished_at'),
+    all<RunSummary>('people_runs', 'id, company_key, cost_usd, error, finished_at, rule'),
+    createServiceClient().from('company_settings').select('company_key').eq('fit_override', true),
   ])
+  const overrides = new Set((settings.data ?? []).map((s) => s.company_key as string))
   const { open } = await searchParams
-  return <CompaniesScreen initial={buildCompanies(jobs, people, runs)} openKey={open ?? null} />
+  return <CompaniesScreen initial={buildCompanies(jobs, people, runs, overrides)} openKey={open ?? null} />
 }

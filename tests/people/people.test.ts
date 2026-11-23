@@ -92,7 +92,7 @@ describe('title patterns', () => {
 })
 
 describe('findPeople', () => {
-  const company = (employees: number): CompanyInput => ({ company: 'Acme AI', company_key: 'acme ai', domain: 'acme.ai', employees, size_text: null })
+  const company = (employees: number): CompanyInput => ({ company: 'Acme AI', company_key: 'acme ai', domain: 'acme.ai', employees, size_text: null, track: 'sales', roleSeniority: 'entry' })
   const role = (t: string) => [`### ${t} - [Acme AI](https://x) (Current)`]
 
   function fakeSearch(byQuery: Record<string, ExaResult[]>) {
@@ -116,13 +116,13 @@ describe('findPeople', () => {
     })
     const r = await findPeople(company(12), search)
     expect(r.band).toBe('small')
-    expect(queries).toHaveLength(3) // alumni + recruiting + gtm; executive skipped
+    expect(queries).toHaveLength(4) // blockchain + alumni + recruiting + gtm; executive skipped
     expect(queries.every((q) => q.endsWith('at Acme AI (acme.ai)'))).toBe(true)
     expect(r.people.map((p) => [p.full_name, p.branch])).toEqual([
       ['Rae', 'recruiting'],
       ['Gus', 'gtm_leadership'],
     ])
-    expect(r.cost).toBeCloseTo(0.021)
+    expect(r.cost).toBeCloseTo(0.028)
   })
 
   it('small: no GTM head → executive step runs', async () => {
@@ -130,7 +130,7 @@ describe('findPeople', () => {
       'Co-founder': [profile('f1', 'Fay', 'CEO @ Acme AI', { current: role('Co-founder & CEO') })],
     })
     const r = await findPeople(company(12), search)
-    expect(queries).toHaveLength(4)
+    expect(queries).toHaveLength(5)
     expect(r.people.map((p) => [p.full_name, p.branch, p.level])).toEqual([['Fay', 'executive', 3]])
   })
 
@@ -142,17 +142,17 @@ describe('findPeople', () => {
     })
     const r = await findPeople(company(500), search)
     expect(r.band).toBe('large')
-    expect(queries).toHaveLength(2)
+    expect(queries).toHaveLength(3)
     const recruiting = r.people.filter((p) => p.branch === 'recruiting')
     expect(recruiting.map((p) => p.rank)).toEqual([1, 2, 3])
     expect(r.people.find((p) => p.branch === 'alumni')?.full_name).toBe('Uma')
-    expect(maxSearches('large')).toBe(4)
+    expect(maxSearches('large')).toBe(5)
   })
 
   it('large: falls through recruiting levels when empty', async () => {
     const { queries, search } = fakeSearch({})
     const r = await findPeople(company(500), search)
-    expect(queries).toHaveLength(4)
+    expect(queries).toHaveLength(5)
     expect(r.people).toEqual([])
   })
 

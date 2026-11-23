@@ -2,7 +2,8 @@
 
 import { cn } from '@/lib/utils'
 import type { Tone } from '@/lib/jobs/statuses'
-import { tierMeta } from '@/lib/jobs/tiers'
+import { CATEGORIES, isCategory } from '@/lib/jobs/categories'
+import type { FitFlag } from '@/lib/jobs/fit'
 
 /* Shared bits for the Jobs and Companies screens (Lume pill / chip styles). */
 
@@ -35,23 +36,6 @@ export function LinkedInMark() {
     <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor" aria-hidden>
       <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z" />
     </svg>
-  )
-}
-
-export function TierPill({ tier }: { tier: number | null }) {
-  const meta = tierMeta(tier)
-  if (!meta) return <span className="text-fg-46" title="No tier in the sheet">—</span>
-  return (
-    <span
-      title={`Tier ${meta.tier}: ${meta.label}. ${meta.rule}`}
-      className={cn(
-        'inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[11px] whitespace-nowrap',
-        meta.tier === 1 ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-70'
-      )}
-    >
-      <span className="font-mono tabular-nums">{meta.tier}</span>
-      {meta.short}
-    </span>
   )
 }
 
@@ -104,4 +88,54 @@ export function Chip({ active, onClick, children }: { active: boolean; onClick: 
 
 export function Count({ n }: { n: number }) {
   return <span className="font-mono tabular-nums opacity-70">{n}</span>
+}
+
+/** Role category from the classifier; low confidence (title only) is dashed and says so. */
+export function CategoryPill({ category, confidence }: { category: string | null; confidence: string | null }) {
+  if (!category || !isCategory(category)) {
+    return <span className="rounded-full border border-dashed border-line px-2 py-0.5 text-[11px] text-fg-46">Unclassified</span>
+  }
+  const meta = CATEGORIES[category]
+  const low = confidence === 'low'
+  const medium = confidence === 'medium'
+  return (
+    <span
+      title={`${meta.label}: ${meta.hint}. Confidence: ${confidence ?? 'unknown'}${low ? ' (title only, no posting text)' : ''}`}
+      className={cn(
+        'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] whitespace-nowrap',
+        category === 'gtm_eng' ? 'border-primary/40 bg-primary/12 text-fg' : 'border-line text-fg-70',
+        low && 'border-dashed bg-transparent'
+      )}
+    >
+      {meta.label}
+      {low && <span className="text-fg-46">· title only</span>}
+      {medium && <span className="text-fg-46">?</span>}
+    </span>
+  )
+}
+
+const FLAG_TONE: Record<FitFlag['level'], string> = {
+  block: 'border-red/30 bg-red/10 text-red',
+  warn: 'border-amber/30 bg-amber/10 text-amber',
+  info: 'border-line text-fg-46',
+}
+
+/** Fit flags. Compact mode shows the most severe one plus a count. */
+export function FlagChips({ flags, override, compact = false }: { flags: FitFlag[]; override: boolean; compact?: boolean }) {
+  const shown = flags.filter((f) => !compact || f.level !== 'info')
+  if (!shown.length) return null
+  const order = { block: 0, warn: 1, info: 2 }
+  const sorted = [...shown].sort((a, b) => order[a.level] - order[b.level])
+  const list = compact ? sorted.slice(0, 1) : sorted
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {list.map((f, i) => (
+        <span key={i} title={f.message} className={cn('inline-flex h-5 items-center rounded-full border px-2 text-[10px] whitespace-nowrap', FLAG_TONE[f.level], override && f.level === 'block' && 'line-through opacity-70')}>
+          {compact ? (f.level === 'block' ? '⚠ ' : '') + f.message : f.message}
+        </span>
+      ))}
+      {compact && sorted.length > 1 && <span className="text-[10px] text-fg-46">+{sorted.length - 1}</span>}
+      {override && <span className="text-[10px] text-primary">overridden</span>}
+    </span>
+  )
 }

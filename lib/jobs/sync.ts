@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseCsv } from './csv'
-import { factsOf, parseJobsFinal, type JobInsert } from './normalize'
+import { descriptionOf, factsOf, parseJobsFinal, type JobInsert } from './normalize'
 
 export interface SyncResult {
   read: number
@@ -50,6 +50,19 @@ export async function syncFromCsv(db: SupabaseClient, csvText: string): Promise<
       .from('jobs')
       .upsert(toUpdate.slice(i, i + CHUNK).map(factsOf), { onConflict: 'company_key,link_key' })
     if (error) throw new Error(`refresh jobs: ${error.message}`)
+  }
+
+  // Descriptions only fill empty fields, one row at a time, so a bulk upsert
+  // can never null out text fetched from the job boards.
+  for (const r of rows) {
+    const description = descriptionOf(r)
+    if (!description) continue
+    await db
+      .from('jobs')
+      .update({ description, description_source: 'sheet' })
+      .eq('company_key', r.company_key)
+      .eq('link_key', r.link_key)
+      .is('description', null)
   }
 
   return { read: rows.length, inserted: toInsert.length, updated: toUpdate.length, skipped }

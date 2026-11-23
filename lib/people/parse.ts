@@ -14,6 +14,10 @@ export interface Profile {
   /** Roles marked "(Current)" in the profile's Experience section. */
   current: { title: string; company: string | null }[]
   is_ucla: boolean
+  /** Blockchain @ UCLA in experience, education activities or organizations. */
+  in_blockchain_ucla: boolean
+  /** Full profile text as returned by Exa, stored so later detection changes need no new search. */
+  text: string
 }
 
 /** `/in/<slug>` → lowercase decoded slug; null if not a LinkedIn profile URL. */
@@ -32,6 +36,7 @@ export function canonicalLinkedin(key: string): string {
 }
 
 const UCLA = /\bUCLA\b|University of California,?\s+Los Angeles/i
+export const BLOCKCHAIN_UCLA = /blockchain\s*(at|@)\s*(ucla|university of california,?\s+los angeles)|ucla\s+blockchain|bruins?\s+blockchain/i
 
 /**
  * Exa's profile text is markdown: "# Name", the headline on the next line,
@@ -79,6 +84,8 @@ export function parseProfile(r: ExaResult): Profile | null {
     linkedin_key: key,
     current,
     is_ucla: UCLA.test(text) || UCLA.test(headline ?? ''),
+    in_blockchain_ucla: BLOCKCHAIN_UCLA.test(text) || BLOCKCHAIN_UCLA.test(headline ?? ''),
+    text,
   }
 }
 

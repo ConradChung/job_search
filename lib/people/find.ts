@@ -1,6 +1,7 @@
 import { matchCompany, parseProfile, type ExaResult, type Profile } from './parse'
 import { sizeBand, type SizeBand } from './size'
-import { ALUMNI_QUERY, PLANS, type Branch, type Step } from './targets'
+import { ALUMNI_QUERY, BLOCKCHAIN_QUERY, functionScore, planFor, ruleFor, TITLES, type Branch, type Step } from './targets'
+import type { Track } from '@/lib/jobs/categories'
 
 export const CAP_PER_BRANCH = 3
 
@@ -10,6 +11,10 @@ export interface CompanyInput {
   domain: string | null
   employees: number | null
   size_text: string | null
+  /** Routing track of the company's primary role (sales/GTM vs engineering/product). */
+  track: Track
+  /** Seniority of that role: leadership recruiters are only kept for director-level roles. */
+  roleSeniority: string | null
 }
 
 export type Searcher = (query: string) => Promise<{ results: ExaResult[]; cost: number }>
@@ -27,14 +32,18 @@ export interface FoundPerson {
   level: number | null
   size_band: SizeBand
   is_ucla: boolean
+  in_blockchain_ucla: boolean
   rank: number
   source: 'exa'
   confidence: 'high' | 'medium'
+  profile_text: string
   raw: { step: string }
 }
 
 export interface FindResult {
   band: SizeBand
+  track: Track
+  rule: string
   searches: number
   cost: number
   /** Profiles returned by Exa that are at the company now (before branch caps). */
@@ -59,36 +68,33 @@ export function domainOf(website: string | null | undefined): string | null {
   }
 }
 
-/** Alumni ranking: sales / GTM / recruiting roles before everyone else. */
-const RELEVANT = /sales|account exec|\bae\b|gtm|go[- ]to[- ]market|growth|revenue|rev ?ops|business dev|partnership|recruit|talent|founder|ceo/i
-const relevance = (title: string) => (RELEVANT.test(title) ? 1 : 0)
-
 const target = (c: CompanyInput) => (c.domain ? `${c.company} (${c.domain})` : c.company)
 
 /**
- * Run the size band's search plan for one company.
+ * Run the routing plan for one company: Blockchain @ UCLA, UCLA alumni, then
+ * the track's steps (sales/GTM by size band, or the engineering chain).
  *
- * Alumni plus every unconditional step run in parallel; conditional steps run
- * in order once earlier hits are known. Every profile returned (by any search)
- * that is at the company now is classified against every step, so a recruiter
- * surfaced by the alumni search still counts. One person lands in one branch:
- * UCLA alumni first, else the first step whose titles match. Capped at
- * CAP_PER_BRANCH per branch, best level and confidence first.
+ * Unconditional searches run in parallel; conditional steps run in order once
+ * earlier hits are known. Every profile returned that is at the company now is
+ * classified against every step. One person lands in one branch: Blockchain
+ * @ UCLA first, then UCLA alumni, then the first matching step that ran.
+ * Leadership / executive / fractional recruiters are dropped unless the role
+ * is director-level or above. Capped at CAP_PER_BRANCH per branch.
  */
 export async function findPeople(c: CompanyInput, search: Searcher): Promise<FindResult> {
   const band = sizeBand(c.employees, c.size_text)
-  const plan = PLANS[band]
+  const plan = planFor(c.track, band)
+  const directorRole = c.roleSeniority === 'director_plus'
   const candidates = new Map<string, Candidate>()
   let searches = 0
   let cost = 0
   let order = 0
 
   const run = async (id: string, query: string) => {
-    const q = `${query} at ${target(c)}`
-    const { results, cost: spent } = await search(q)
+    const { results, cost: spent } = await search(`${query} at ${target(c)}`)
     searches++
     cost += spent
-    return { id, q, results }
+    return { id, results }
   }
 
   const absorb = (batch: { id: string; results: ExaResult[] }) => {
@@ -97,6 +103,7 @@ export async function findPeople(c: CompanyInput, search: Searcher): Promise<Fin
       if (!p || candidates.has(p.linkedin_key)) continue
       const m = matchCompany(p, c.company, c.domain)
       if (!m) continue
+      if (!directorRole && TITLES.leadershipRecruiter.test(m.title)) continue
       candidates.set(p.linkedin_key, { profile: p, title: m.title, confidence: m.confidence, order: order++, foundBy: batch.id })
     }
   }
@@ -111,7 +118,11 @@ export async function findPeople(c: CompanyInput, search: Searcher): Promise<Fin
     return h
   }
 
-  const first = await Promise.all([run('alumni', ALUMNI_QUERY), ...plan.filter((s) => !s.when).map((s) => run(s.id, s.query))])
+  const first = await Promise.all([
+    run('blockchain_ucla', BLOCKCHAIN_QUERY),
+    run('alumni', ALUMNI_QUERY),
+    ...plan.filter((s) => !s.when).map((s) => run(s.id, s.query)),
+  ])
   first.forEach(absorb)
 
   const ran = new Set(plan.filter((s) => !s.when).map((s) => s.id))
@@ -122,37 +133,32 @@ export async function findPeople(c: CompanyInput, search: Searcher): Promise<Fin
     ran.add(s.id)
   }
 
-  // A conditional step that was skipped must not contribute people either
-  // (e.g. a founder surfaced by another search when the GTM head exists).
+  // A conditional step that was skipped must not contribute people either.
   const allowed = (s: Step) => ran.has(s.id)
 
-  const byBranch = new Map<Branch, { cand: Candidate; level: number | null; step: string }[]>()
+  const byBranch = new Map<Branch, { cand: Candidate; level: number | null; step: string; fn: number }[]>()
   for (const cand of candidates.values()) {
     const s = stepOf(cand)
+    const stepOk = s && allowed(s)
     let branch: Branch | null = null
-    let level: number | null = null
-    let stepId = cand.foundBy
-    if (cand.profile.is_ucla) {
-      branch = 'alumni'
-      level = s && allowed(s) ? s.level : null
-    } else if (s && allowed(s)) {
-      branch = s.branch
-      level = s.level
-      stepId = s.id
-    }
+    if (cand.profile.in_blockchain_ucla) branch = 'blockchain_ucla'
+    else if (cand.profile.is_ucla) branch = 'alumni'
+    else if (stepOk) branch = s.branch
     if (!branch) continue
     const list = byBranch.get(branch) ?? []
-    list.push({ cand, level, step: stepId })
+    list.push({ cand, level: stepOk ? s.level : null, step: stepOk ? s.id : cand.foundBy, fn: functionScore(cand.title, c.track) })
     byBranch.set(branch, list)
   }
 
   const people: FoundPerson[] = []
   for (const [branch, list] of byBranch) {
+    const alumniLike = branch === 'alumni' || branch === 'blockchain_ucla'
     list
       .sort(
         (a, b) =>
+          // Alumni groups: closeness to the role's function first.
+          (alumniLike ? b.fn - a.fn : 0) ||
           (a.level ?? 99) - (b.level ?? 99) ||
-          relevance(b.cand.title) - relevance(a.cand.title) ||
           (a.cand.confidence === b.cand.confidence ? 0 : a.cand.confidence === 'high' ? -1 : 1) ||
           a.cand.order - b.cand.order
       )
@@ -172,13 +178,15 @@ export async function findPeople(c: CompanyInput, search: Searcher): Promise<Fin
           level,
           size_band: band,
           is_ucla: p.is_ucla,
+          in_blockchain_ucla: p.in_blockchain_ucla,
           rank: i + 1,
           source: 'exa',
           confidence: cand.confidence,
+          profile_text: p.text,
           raw: { step },
         })
       })
   }
 
-  return { band, searches, cost, atCompany: candidates.size, people }
+  return { band, track: c.track, rule: ruleFor(c.track, band), searches, cost, atCompany: candidates.size, people }
 }

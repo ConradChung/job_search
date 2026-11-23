@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireOwner } from '@/lib/auth/requireOwner'
 import { createServiceClient } from '@/lib/supabase/service'
-import { draftForPerson } from '@/lib/drafts/run'
+import { DraftSkipped, draftForPerson } from '@/lib/drafts/run'
 import { PERSON_COLUMNS } from '@/lib/people/types'
 
 export const maxDuration = 60
@@ -16,8 +16,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   try {
     const r = await draftForPerson(db, new Anthropic(), id)
     const { data } = await db.from('people').select(PERSON_COLUMNS).eq('id', id).single()
-    return NextResponse.json({ person: data, cost: r.cost, tooLong: r.tooLong })
+    return NextResponse.json({ person: data, cost: r.cost, problems: r.problems, proof: r.proof })
   } catch (err) {
+    if (err instanceof DraftSkipped) return NextResponse.json({ skipped: true, error: `Not drafted: ${err.message}` }, { status: 409 })
     if (err instanceof Anthropic.RateLimitError) return NextResponse.json({ error: 'Claude rate limit, try again shortly' }, { status: 429 })
     if (err instanceof Anthropic.APIError) return NextResponse.json({ error: `Claude API ${err.status}` }, { status: 502 })
     const message = err instanceof Error ? err.message : 'draft failed'
