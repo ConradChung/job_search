@@ -377,3 +377,17 @@ describe('note length: hard limit 250 blocks, soft limit 230 warns (owner, 2026-
     expect(sys).not.toMatch(/\b200\b/)
   })
 })
+
+describe('exclamation marks (owner, 2026-11-23)', () => {
+  it('alumni connection notes may use them; other notes still may not', () => {
+    for (const b of ['alumni', 'blockchain_ucla']) expect(systemPrompt({ key: 'systems', why: '' }, PROFILE.noteLimit, true, undefined, b)).not.toMatch(/exclamation/)
+    for (const b of ['recruiting', 'gtm_leadership', 'executive', undefined]) expect(systemPrompt({ key: 'systems', why: '' }, PROFILE.noteLimit, true, undefined, b)).toMatch(/no exclamation marks/)
+  })
+  it('the code check never blocked them in a note, and an alumni note with one passes', () => {
+    const alum = { limit: PROFILE.noteLimit, siblings: [], proof: { key: 'systems' as const, why: '' }, branch: 'alumni' as const }
+    expect(draftProblems('Erika! Fellow Bruin here, graduating March 2027. How does your team work with sales at Engine?', alum)).toEqual([])
+  })
+  it('after-accept messages keep the ban', () => {
+    expect(followupProblems('Thanks for connecting, Erika! I build outbound lead pipelines. Would you be open to a quick chat?', { branch: 'alumni', allowTools: false }).join()).toMatch(/No exclamation marks/)
+  })
+})

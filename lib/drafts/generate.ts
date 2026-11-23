@@ -54,7 +54,7 @@ export async function generateDraft(client: DraftClient, ctx: DraftContext): Pro
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: { effort: 'low' },
-      system: systemPrompt(ctx.proof, ctx.limit, ctx.allowTools),
+      system: systemPrompt(ctx.proof, ctx.limit, ctx.allowTools, undefined, ctx.branch),
       messages,
     })
     cost += costOf(response.usage as Usage)

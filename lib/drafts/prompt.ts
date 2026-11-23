@@ -110,7 +110,9 @@ const CLUB_RULES = `Club fact rules:
 - There are no counts on record (events, attendance, members, dollars). Never state or imply a number.
 - Leave out valuations and funding rounds.`
 
-export function systemPrompt(proof: ProofChoice, limit: number, allowTools = true, softLimit: number = PROFILE.noteSoftLimit): string {
+export function systemPrompt(proof: ProofChoice, limit: number, allowTools = true, softLimit: number = PROFILE.noteSoftLimit, branch?: string): string {
+  // Owner (2026-11-23): alumni notes may use an exclamation mark ("Erika! Fellow Bruin here").
+  const alum = branch === 'alumni' || branch === 'blockchain_ucla'
   const p = proofFacts(proof, allowTools)
   const club = proof.key !== 'systems'
   return `You write LinkedIn connection request notes for ${PROFILE.name}.
@@ -122,7 +124,7 @@ ${p.facts.map((f) => `  - ${f}`).join('\n')}${p.short ? `\n  Short form that fit
 ${proof.key === 'partner_team' ? `\nThe recipient works at ${proof.partner}. Say Conrad worked with their team on a campus partnership and stop there: no details, they can check.\n` : ''}${club ? `\n${CLUB_RULES}\n` : ''}
 Rules:
 - Aim for ${Math.min(softLimit, limit)} characters or fewer; never more than ${limit} in total. Shorter is better. Use the short form of the proof point and cut its second clause first (e.g. drop "working out terms with their head of growth").
-- Plain text, first person, as Conrad. Greet by first name. No emojis, hashtags, em dashes or exclamation marks.
+- Plain text, first person, as Conrad. Greet by first name. No emojis, hashtags or em dashes${alum ? '' : ', and no exclamation marks'}.
 - Exactly one ask and at most one question mark. Never "X, or Y?" double asks.
 - No frequency or volume claims ("every week", "daily", "hundreds", "a lot of").
 - Say "Blockchain @ UCLA", never "my blockchain club".
