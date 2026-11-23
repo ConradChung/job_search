@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils'
 import type { CompanyJob, CompanyView } from '@/lib/people/companies'
 import { blocks, FIT_TRACKS, tierOf, type FitTrack } from '@/lib/jobs/fit'
 import { ExportPanel, ImportButton } from './ExportPanel'
+import { RequestsPanel } from './RequestsPanel'
+import type { PendingAction } from '@/lib/actions/pending'
 import { applyFilters, countFor, countTiers, culprits, fitAfterTierChange, rollupStatus, rowTrack, type Filters, type Group } from '@/lib/pipeline/filters'
 import { STATUSES, statusMeta } from '@/lib/jobs/statuses'
 import { BAND_LABEL, type SizeBand } from '@/lib/people/size'
@@ -55,7 +57,7 @@ function salaryLabel(j: Pick<CompanyJob, 'salary_min' | 'salary_max'>) {
  * The one page: a row per company (best-fit role, rollup status, fit, people),
  * expanding to every open role and the people tree with drafts.
  */
-export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; openKey: string | null }) {
+export function PipelineScreen({ initial, openKey, actions = [] }: { initial: CompanyView[]; openKey: string | null; actions?: PendingAction[] }) {
   const router = useRouter()
   const [companies, setCompanies] = useState(initial)
   const [seen, setSeen] = useState(initial)
@@ -245,6 +247,7 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
     )
     setProgress(null)
     toast.success(`Drafted ${done} notes`)
+    return { drafted: done, of: list.length }
   }
 
   async function setOverride(c: CompanyView, value: boolean) {
@@ -295,6 +298,7 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
     if (list.length > 1) toast.success(`Searched ${list.length} companies · $${spent.toFixed(2)}`)
     setProgress(null)
     router.refresh()
+    return { searched: list.length, spent_usd: Math.round(spent * 1000) / 1000 }
   }
 
   function patchPerson(companyKey: string, id: number, patch: Partial<PersonRow> | null) {
@@ -396,6 +400,16 @@ export function PipelineScreen({ initial, openKey }: { initial: CompanyView[]; o
           <Button onClick={() => findPeople(unsearched)}>Run search</Button>
         </GlassCard>
       )}
+
+      <RequestsPanel
+        actions={actions}
+        busy={busy}
+        run={{
+          findPeople: (keys) => findPeople(companies.filter((c) => keys.includes(c.key))),
+          draftNotes: (ids) => draftAll(companies.flatMap((c) => c.people.filter((p) => ids.includes(p.id) && !p.draft).map((p) => ({ c, p })))),
+        }}
+        onChanged={() => router.refresh()}
+      />
 
       {confirmingApprove && (
         <GlassCard size="sm" className="flex-row flex-wrap items-center gap-3 px-4">

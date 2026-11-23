@@ -14,9 +14,7 @@ import { writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
-import { buildCompanies, COMPANY_JOB_COLUMNS, type CompanyJob, type RunSummary } from '../lib/people/companies'
-import { PERSON_COLUMNS, type PersonRow } from '../lib/people/types'
-import { BRANCH_ORDER } from '../lib/people/targets'
+import { loadCompanies, peopleInOrder } from '../lib/pipeline/load'
 import { applyFilters, CLEARED } from '../lib/pipeline/filters'
 import { runExport } from '../lib/export/run'
 import { DEFAULT_BATCH } from '../lib/export/columns'
@@ -27,30 +25,10 @@ const opt = (n: string, d: string) => (args.includes(`--${n}`) ? args[args.index
 
 async function main() {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
-  const all = async <T>(table: string, columns: string) => {
-    const out: T[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await db.from(table).select(columns).order('id').range(from, from + 999)
-      if (error) throw new Error(`load ${table}: ${error.message}`)
-      out.push(...((data ?? []) as T[]))
-      if (!data || data.length < 1000) break
-    }
-    return out
-  }
-  const [jobs, people, runs, settings] = await Promise.all([
-    all<CompanyJob>('jobs', COMPANY_JOB_COLUMNS),
-    all<PersonRow>('people', PERSON_COLUMNS),
-    all<RunSummary>('people_runs', 'id, company_key, cost_usd, error, finished_at, rule'),
-    db.from('company_settings').select('company_key').eq('fit_override', true),
-  ])
-  const companies = buildCompanies(jobs, people, runs, new Set((settings.data ?? []).map((s) => s.company_key as string)))
-  const visible = applyFilters(companies, { ...CLEARED, fit: 'passes' })
-  const ids = visible.flatMap((c) =>
-    [...c.people]
-      .sort((a, b) => BRANCH_ORDER.indexOf(a.branch) - BRANCH_ORDER.indexOf(b.branch) || (a.rank ?? 99) - (b.rank ?? 99))
-      .filter((p) => p.outreach_status === 'approved' || p.outreach_status === 'exported')
-      .map((p) => p.id)
-  )
+  const visible = applyFilters(await loadCompanies(db), { ...CLEARED, fit: 'passes' })
+  const ids = peopleInOrder(visible)
+    .filter((p) => p.outreach_status === 'approved' || p.outreach_status === 'exported')
+    .map((p) => p.id)
   const limit = Number(opt('limit', String(DEFAULT_BATCH)))
   const r = await runExport(db, {
     ids,

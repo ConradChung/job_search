@@ -18,6 +18,8 @@ export async function middleware(request: NextRequest) {
   const isApi = pathname.startsWith('/api/')
 
   if (isPrivateLink(pathname)) return NextResponse.next({ request })
+  // MCP server: its own bearer-token check runs in the route (lib/mcp/auth.ts), before anything else.
+  if (pathname === '/api/mcp') return NextResponse.next({ request })
   // Private-link cookie: let the browser in without a Supabase session.
   if (!isAuthPage && accessKeyMatches(request.cookies.get(ACCESS_COOKIE)?.value)) {
     return NextResponse.next({ request })
