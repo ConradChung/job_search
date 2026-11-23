@@ -564,9 +564,11 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
           onRedraft={() => onDraft(company, p)}
           onApprove={() => onOutreach(company, p, 'approved')}
         />
-      ) : !company.canDraft ? (
+      ) : null}
+      {!p.draft && !company.canDraft ? (
         <span className="mt-1 inline-block text-[11px] text-fg-46">Drafting blocked by fit flags</span>
-      ) : (
+      ) : null}
+      {!p.draft && company.canDraft ? (
         <button
           type="button"
           disabled={busy}
@@ -576,7 +578,25 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
           {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <PenLine className="size-3" aria-hidden />}
           {busy ? 'Drafting…' : 'Draft note'}
         </button>
-      )}
+      ) : null}
+      {p.draft && p.followup ? (
+        <div className="mt-1.5 rounded-lg border border-dashed border-line p-2.5">
+          <div className="mb-1 text-[10px] font-medium tracking-wide text-fg-46 uppercase">After they accept</div>
+          <p className="text-[12px] leading-relaxed whitespace-pre-wrap text-fg-70">{p.followup}</p>
+          <div className="mt-1.5 flex justify-end">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-fg-46 transition-colors hover:bg-muted hover:text-fg"
+              onClick={() => {
+                navigator.clipboard.writeText(p.followup ?? '')
+                toast.success('Copied')
+              }}
+            >
+              <Copy className="size-3" aria-hidden /> Copy
+            </button>
+          </div>
+        </div>
+      ) : null}
     </li>
   )
 }

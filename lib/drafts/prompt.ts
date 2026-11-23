@@ -27,7 +27,8 @@ const ANGLE: Record<DraftContext['branch'], (c: DraftContext) => string> = {
     `They were in Blockchain @ UCLA, the club Conrad is in now. Open with that shared club (not "fellow Bruin"); no partner names needed for the opener. Then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
   alumni: (c) =>
     `They went to UCLA. Open with "fellow Bruin" (that already says UCLA, so never add "I'm at UCLA"), then ask ONE specific question about their team or function at ${c.company} that they can answer over DM.${c.mentionRole ? ` You may mention the ${c.roleTitle} role since it is in their function.` : ' Do not name the open role.'}`,
-  recruiting: (c) => `They recruit at ${c.company}. End with exactly this sentence and no other question: "${recruiterAsk(c)}"`,
+  recruiting: (c) =>
+    `They recruit at ${c.company}. Write exactly this shape, in this order: "Hi ${c.firstName}, I'm Conrad at UCLA, ${GRAD_LINE}." then ONE short proof sentence, then exactly "${recruiterClose(c)}". No other question. If it runs long, shorten the proof sentence, never the role.`,
   gtm_leadership: (c) => `They lead GTM / sales / growth at ${c.company}. Name the ${c.roleTitle ?? 'open'} role, give the proof point, and make ONE ask.`,
   executive: (c) => `They are an executive or founder at ${c.company}. Be brief: name the ${c.roleTitle ?? 'open'} role and ask ONE thing: who the right person to talk to is.`,
   poster: (c) => `They posted the ${c.roleTitle ?? 'open'} role at ${c.company}. Name it and make ONE ask.`,
@@ -37,10 +38,13 @@ const ANGLE: Record<DraftContext['branch'], (c: DraftContext) => string> = {
 export const GRAD_LINE = 'graduating March 2027'
 export const TOOL_NAMES = /\b(clay|supabase|exa|apify)\b/i
 
-/** The one recruiter ask, word for word (owner rule). */
-export function recruiterAsk(c: Pick<DraftContext, 'roleTitle' | 'company'>): string {
-  return `Would I be in scope for the ${c.roleTitle ?? 'open'} role at ${c.company}?`
+/** Recruiter notes end with this, word for word (owner rule, 2026-11-23). */
+export function recruiterClose(c: Pick<DraftContext, 'roleTitle' | 'company'>): string {
+  return `Interested in the ${c.roleTitle ?? 'open'} role at ${c.company}. Open to connecting?`
 }
+
+/** The scope question lives in the after-accept message for recruiters. */
+export const SCOPE_QUESTION = 'Is a March 2027 grad in scope for this role?'
 
 /** The single fact block a note may use, in the owner's words. Tool names stripped unless allowed. */
 export function proofFacts(p: ProofChoice, allowTools = true): { label: string; facts: string[]; short?: string } {
@@ -82,7 +86,7 @@ The only facts you may use about Conrad:
 ${p.facts.map((f) => `  - ${f}`).join('\n')}${p.short ? `\n  Short form that fits: "${p.short}"` : ''}
 ${proof.key === 'partner_team' ? `\nThe recipient works at ${proof.partner}. Say Conrad worked with their team on a campus partnership and stop there: no details, they can check.\n` : ''}${club ? `\n${CLUB_RULES}\n` : ''}
 Rules:
-- At most ${limit} characters in total. Shorter is better.
+- At most ${limit} characters in total. Shorter is better. Use the short form of the proof point and cut its second clause first (e.g. drop "working out terms with their head of growth").
 - Plain text, first person, as Conrad. Greet by first name. No emojis, hashtags, em dashes or exclamation marks.
 - Exactly one ask and at most one question mark. Never "X, or Y?" double asks.
 - Say "Blockchain @ UCLA", never "my blockchain club".
@@ -170,8 +174,12 @@ export function draftProblems(
   if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader; describe the work plainly.')
   if ((c.branch === 'alumni' || c.branch === 'blockchain_ucla') && /\b(i'?m|i am)\s+(a\s+\w+\s+)?at ucla\b/i.test(text))
     problems.push('"fellow Bruin" already says UCLA; drop "I\'m at UCLA".')
-  if (c.branch === 'recruiting' && c.company && !text.includes(recruiterAsk({ roleTitle: c.roleTitle ?? null, company: c.company })))
-    problems.push(`End with exactly: "${recruiterAsk({ roleTitle: c.roleTitle ?? null, company: c.company })}"`)
+  if (c.branch === 'recruiting' && c.company) {
+    const close = recruiterClose({ roleTitle: c.roleTitle ?? null, company: c.company })
+    if (!text.trim().endsWith(close)) problems.push(`End with exactly: "${close}" (shorten the proof, never the role).`)
+    if (!text.includes(GRAD_LINE)) problems.push(`Open with "I'm Conrad at UCLA, ${GRAD_LINE}."`)
+    if (/cold-?email\w*\s+coinbase/i.test(text)) problems.push('Never use the Coinbase cold-email line with a recruiter.')
+  }
   if (text.length > c.limit) problems.push(`It is ${text.length} characters; the limit is ${c.limit}.`)
   if (INTERNAL_NAMES.test(text)) problems.push('It uses an internal project name; describe the work instead.')
   if ((text.match(/\?/g) ?? []).length > 1) problems.push('It asks more than one question; keep exactly one ask.')
@@ -188,5 +196,61 @@ export function draftProblems(
   if (extra.length) problems.push(`It names ${extra.join(', ')}, which is a second proof point; use only the one given.`)
   const close = c.siblings.find((s) => similarity(text, s) > MAX_SIMILARITY)
   if (close) problems.push('It is too close to another note at this company; change the opening, the proof wording and the ask.')
+  return problems
+}
+
+/** After-accept message: sent once they accept the connection. 2-3 sentences. */
+export function followupSystemPrompt(proof: ProofChoice, allowTools = true): string {
+  const p = proofFacts(proof, allowTools)
+  const extra = PROFILE.proof.systems.facts.map((f) => (allowTools ? f : f.replace(/\s+with tools like [^.]+/i, '')))
+  return `You write the message ${PROFILE.name} sends on LinkedIn right after someone accepts his connection request.
+
+Facts you may use (never anything else):
+- He is at ${PROFILE.school}, graduating ${PROFILE.graduation.label}.
+- Already said in the connection note: ${p.facts.join(' ')}
+- Other facts for one more line of proof:
+${extra.map((f) => `  - ${f}`).join('\n')}
+${proof.key !== 'systems' ? `\n${CLUB_RULES}\n` : ''}
+Rules:
+- Two or three sentences. Plain text, first person. Thank them briefly for connecting.
+- Add exactly one more line of proof: ONE of the other facts, in one clause, different from what the connection note said. Never two.
+- This is the first conversation. Never refer to earlier contact (no "since we last spoke", "great to reconnect", "as we discussed").
+- No exclamation marks, no em dashes.
+- No numbers of any kind (counts, money, rates, pipeline). No internal project names. Never invent anything.
+- Say "Blockchain @ UCLA", never "my blockchain club". Never imply Conrad worked at a partner.
+
+Return only the message text.`
+}
+
+export function followupUserPrompt(c: DraftContext, note: string): string {
+  const ask =
+    c.branch === 'recruiting'
+      ? `End with exactly: "${SCOPE_QUESTION}"`
+      : `End with one light ask: whether they would be open to a quick chat about their team at ${c.company}. One question only.${(c.branch === 'alumni' || c.branch === 'blockchain_ucla') && !c.mentionRole ? ' Do not name the open role (they are not in its function).' : ''}`
+  return [`Recipient: ${c.firstName}${c.title ? `, ${c.title}` : ''} at ${c.company} (${c.branch}).`, `Role: ${c.roleTitle ?? 'open role'}.`, `Connection note already sent:\n${note}`, ask].join('\n')
+}
+
+export function followupProblems(text: string, c: Pick<DraftContext, 'branch' | 'allowTools'>): string[] {
+  const problems: string[] = []
+  const sentences = text.split(/(?<=[.?!])\s+/).filter((s) => s.trim())
+  if (sentences.length < 2 || sentences.length > 4) problems.push('Write two or three sentences.')
+  if (hasMetric(text)) problems.push('No numbers of any kind.')
+  if (INTERNAL_NAMES.test(text)) problems.push('No internal project names.')
+  if (/\bblockchain club\b/i.test(text)) problems.push('Say "Blockchain @ UCLA".')
+  if (c.allowTools === false && TOOL_NAMES.test(text)) problems.push('No tool names for this reader.')
+  if (c.branch === 'recruiting') {
+    if (!text.trim().endsWith(SCOPE_QUESTION)) problems.push(`End with exactly: "${SCOPE_QUESTION}"`)
+    if (/cold-?email\w*\s+coinbase/i.test(text)) problems.push('Never use the Coinbase cold-email line with a recruiter.')
+  }
+  if ((text.match(/\?/g) ?? []).length > 1) problems.push('One question only.')
+  if (/!/.test(text)) problems.push('No exclamation marks.')
+  if (/since we (last )?(spoke|talked|met|connected)|great to (hear from you|reconnect)|as we discussed|last time we/i.test(text))
+    problems.push('Never refer to earlier contact; this is the first conversation.')
+  const factHits = PROFILE.proof.systems.facts.filter((f) => {
+    const key = f.toLowerCase().split(/\s+/).slice(0, 4).join(' ').replace(/[^a-z ]/g, '')
+    return key && text.toLowerCase().replace(/[^a-z ]/g, '').includes(key)
+  }).length
+  if (factHits > 1 || /\b(platform|startups i co-?founded)\b[^.?]*\band i\b[^.?]*\b(pipelines|platform|startups)\b/i.test(text))
+    problems.push('Use one more fact only, not two.')
   return problems
 }

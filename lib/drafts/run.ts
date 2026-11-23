@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { PROFILE } from '@/lib/profile'
-import { generateDraft, type DraftClient } from './generate'
+import { generateDraft, generateFollowup, type DraftClient } from './generate'
 import { firstName, type DraftContext } from './prompt'
 import { chooseProof } from './proof'
 import { loadCompany } from '@/lib/people/run'
@@ -70,14 +70,28 @@ export async function draftForPerson(db: SupabaseClient, client: DraftClient, pe
   const loaded = await draftContext(db, personId)
   if (!loaded) throw new Error(`person ${personId} not found`)
   const r = await generateDraft(client, loaded.ctx)
+  const f = await generateFollowup(client, loaded.ctx, r.text)
   const update: Record<string, unknown> = {
     draft: r.text,
+    followup: f.text,
     draft_generated_at: new Date().toISOString(),
     draft_model: r.model,
-    draft_cost_usd: r.cost,
+    draft_cost_usd: r.cost + f.cost,
   }
   if (loaded.status === 'none') update.outreach_status = 'drafted'
   const { error } = await db.from('people').update(update).eq('id', personId)
   if (error) throw new Error(`save draft: ${error.message}`)
-  return { ...r, personId, proof: loaded.ctx.proof }
+  return { ...r, cost: r.cost + f.cost, followup: f.text, problems: [...r.problems, ...f.problems.map((p) => `follow-up: ${p}`)], personId, proof: loaded.ctx.proof }
+}
+
+/** After-accept message only, for a note the owner already approved as written. */
+export async function followupForPerson(db: SupabaseClient, client: DraftClient, personId: number) {
+  const loaded = await draftContext(db, personId)
+  if (!loaded) throw new Error(`person ${personId} not found`)
+  const { data } = await db.from('people').select('draft').eq('id', personId).single()
+  if (!data?.draft) throw new Error('no note to follow up')
+  const f = await generateFollowup(client, loaded.ctx, data.draft)
+  const { error } = await db.from('people').update({ followup: f.text }).eq('id', personId)
+  if (error) throw new Error(`save follow-up: ${error.message}`)
+  return f
 }

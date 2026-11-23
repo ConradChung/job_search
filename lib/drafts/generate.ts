@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { cleanDraft, draftProblems, systemPrompt, userPrompt, type DraftContext } from './prompt'
+import { cleanDraft, draftProblems, followupProblems, followupSystemPrompt, followupUserPrompt, systemPrompt, userPrompt, type DraftContext } from './prompt'
 
 export const DRAFT_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6, cacheRead: 0.2 / 1e6, cacheWrite: 5 / 1e6 }
@@ -75,5 +75,35 @@ export async function generateDraft(client: DraftClient, ctx: DraftContext): Pro
     messages.push({ role: 'user', content: `Rewrite it. ${problems.join(' ')}` })
   }
 
+  return { text, model, cost, problems }
+}
+
+/** The after-accept message for a note, with the same check-and-retry loop. */
+export async function generateFollowup(client: DraftClient, ctx: DraftContext, note: string): Promise<DraftResult> {
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: followupUserPrompt(ctx, note) }]
+  let cost = 0
+  let model = DRAFT_MODEL
+  let text = ''
+  let problems: string[] = []
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const response = await client.beta.messages.create({
+      model: DRAFT_MODEL,
+      max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'low' },
+      system: followupSystemPrompt(ctx.proof, ctx.allowTools),
+      messages,
+    })
+    cost += costOf(response.usage as Usage)
+    model = response.model
+    if (response.stop_reason === 'refusal') throw new Error(`follow-up refused (${response.stop_details?.category ?? 'no category'})`)
+    text = cleanDraft(response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map((b) => b.text).join(''))
+    if (!text) throw new Error('empty follow-up')
+    problems = followupProblems(text, ctx)
+    if (!problems.length) break
+    messages.push({ role: 'assistant', content: response.content })
+    messages.push({ role: 'user', content: `Rewrite it. ${problems.join(' ')}` })
+  }
   return { text, model, cost, problems }
 }

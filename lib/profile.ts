@@ -91,5 +91,5 @@ export const PROFILE = {
   },
 
   /** LinkedIn connection notes: hard character limit used by the generator and the counter. */
-  noteLimit: 250,
+  noteLimit: 200,
 } as const

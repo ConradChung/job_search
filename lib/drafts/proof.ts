@@ -38,45 +38,44 @@ const PREDICTION = /prediction market|event contracts?|forecasting market/i
 const CRYPTO = /\bcrypto|blockchain|web3|stablecoin|\bdefi\b|on-?chain|digital assets?|\bnft/i
 
 /**
- * Owner rules (2026-11-23), in order. One proof point per note, never two:
+ * Owner rules (2026-11-23), in order. One proof point per note:
  * 1. Recipient's company is a partner: that relationship outranks everything.
- * 2. Blockchain @ UCLA alumni: the club is the opener; use systems when it fits.
- * 3. Prediction-market / fintech companies: Kalshi. Crypto companies: Coinbase.
- * 4. Partnerships / BD or founding GTM roles anywhere: Kalshi (a deal sourced and closed).
- * 5. GTM Eng: systems first; Coinbase (cold outreach that converted) is the
- *    one club fact that fits, used to vary a second note at the same company.
- * 6. RevOps / sales: systems.
+ * 2. Recruiters: crypto / fintech / prediction market → Kalshi; SDR roles →
+ *    own prospecting; anything else that fits → systems. Never the Coinbase
+ *    cold-email line (it stays for alumni).
+ * 3. Blockchain @ UCLA alumni: the club is the opener; systems when it fits.
+ * 4. Other alumni and contacts: crypto → Coinbase; fintech / prediction market →
+ *    Kalshi; partnerships / BD or founding GTM → Kalshi; GTM Eng → Coinbase
+ *    (the recruiter gets systems, so the alum's note is the one that varies);
+ *    SDR → Kalshi; RevOps / sales → systems.
  * Null = nothing honestly matches the role: poor fit, no draft.
  */
 export function chooseProof(i: ProofInput): ProofChoice | null {
   const partner = partnerOf(i.company)
   if (partner) return { key: partner.proof as ProofKey, partner: partner.name, why: `${partner.name} is a Blockchain @ UCLA partner` }
 
-  const ctx0 = i.context ?? ''
-  // SDR roles (owner, 2026-11-23): own prospecting by default; Kalshi / Coinbase
-  // to vary a second note at the company, or at crypto / fintech companies.
-  if (isSdr({ category: i.category, title: i.roleTitle })) {
-    if (i.cryptoOrFintech && CRYPTO.test(ctx0)) return { key: 'coinbase', why: 'SDR at a crypto company' }
-    if (i.cryptoOrFintech || PREDICTION.test(ctx0)) return { key: 'kalshi', why: 'SDR at a fintech company' }
-    if (i.siblingCount % 2 === 1) return { key: i.siblingCount % 4 === 1 ? 'kalshi' : 'coinbase', why: 'SDR, varying a later note' }
-    return { key: 'sdr', why: 'SDR: own prospecting' }
+  const ctx = i.context ?? ''
+  const crypto = !!i.cryptoOrFintech && CRYPTO.test(ctx)
+  const fintech = PREDICTION.test(ctx) || (!!i.cryptoOrFintech && !crypto)
+  const sdr = isSdr({ category: i.category, title: i.roleTitle })
+  const systemsFits = !!i.category && SYSTEMS_FITS.includes(i.category)
+  const founding = /\bfounding\b/i.test(i.roleTitle ?? '') && systemsFits
+
+  if (i.branch === 'recruiting') {
+    if (crypto || fintech) return { key: 'kalshi', why: 'recruiter at a crypto / fintech company' }
+    if (sdr) return { key: 'sdr', why: 'recruiter, SDR role: own prospecting' }
+    if (i.category === 'partnerships_bd') return { key: 'kalshi', why: 'recruiter, partnerships / BD role' }
+    if (systemsFits) return { key: 'systems', why: 'recruiter: systems work' }
+    return null
   }
 
-  const systemsFits = !!i.category && SYSTEMS_FITS.includes(i.category)
   if (i.branch === 'blockchain_ucla' && systemsFits) return { key: 'systems', why: 'shared club opens the note; systems fits the role' }
 
-  const ctx = i.context ?? ''
-  // Crypto / fintech per the classifier; the text only decides which club fact.
-  if (PREDICTION.test(ctx)) return { key: 'kalshi', why: 'prediction-market company' }
-  if (i.cryptoOrFintech && CRYPTO.test(ctx)) return { key: 'coinbase', why: 'crypto company' }
-  if (i.cryptoOrFintech) return { key: 'kalshi', why: 'fintech company' }
-
-  const founding = /\bfounding\b/i.test(i.roleTitle ?? '') && systemsFits
+  if (crypto) return { key: 'coinbase', why: 'crypto company' }
+  if (fintech) return { key: 'kalshi', why: 'fintech / prediction-market company' }
   if (i.category === 'partnerships_bd' || founding) return { key: 'kalshi', why: founding ? 'founding GTM role' : 'partnerships / BD role' }
-
-  if (i.category === 'gtm_eng') {
-    return i.siblingCount % 2 === 1 ? { key: 'coinbase', why: 'GTM Eng, varying a second note' } : { key: 'systems', why: 'GTM Eng: systems first' }
-  }
+  if (sdr) return { key: 'kalshi', why: "SDR role: Kalshi varies from the recruiter's prospecting note" }
+  if (i.category === 'gtm_eng') return { key: 'coinbase', why: 'GTM Eng: recruiter gets systems, the alum note varies' }
   if (systemsFits) return { key: 'systems', why: `${i.category}: systems` }
   return null
 }

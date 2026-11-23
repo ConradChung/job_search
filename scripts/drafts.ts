@@ -9,13 +9,14 @@
  *                       so siblings are compared with new notes only
  *   --clear-blocked     clear Drafted notes at companies whose fit flags now block
  *   --limit 500         at most this many people (default 500)
+ *   --followup-only     with --ids: write only the after-accept message, keep the note
  *   --yes               actually do it (without it: preview only)
  *
  * Never touches approved, sent or replied notes. Nothing is ever sent.
  */
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { DraftSkipped, draftForPerson } from '../lib/drafts/run'
+import { DraftSkipped, draftForPerson, followupForPerson } from '../lib/drafts/run'
 import { loadCompany } from '../lib/people/run'
 import { draftTargetIds } from '../lib/drafts/targets'
 
@@ -84,6 +85,14 @@ async function main() {
   }
 
   const client = new Anthropic()
+  if (flag('followup-only')) {
+    // After-accept message only, keeping the note exactly as written.
+    for (const p of people) {
+      const f = await followupForPerson(db, client, p.id)
+      console.log(`\n[${p.company}] ${p.full_name} follow-up $${f.cost.toFixed(4)}${f.problems.length ? ` PROBLEMS: ${f.problems.join(' ')}` : ''}\n${f.text}`)
+    }
+    return
+  }
   let spent = 0
   const skipped: Record<string, number> = {}
   for (const p of people) {

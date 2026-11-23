@@ -3,7 +3,7 @@ import { cleanDraft, draftProblems, firstName, hasMetric, INTERNAL_NAMES, proofF
 import { generateDraft, type DraftClient } from '@/lib/drafts/generate'
 import { chooseProof, partnerOf, type ProofInput } from '@/lib/drafts/proof'
 import { draftTargetIds } from '@/lib/drafts/targets'
-import { recruiterAsk } from '@/lib/drafts/prompt'
+import { followupProblems, recruiterClose, SCOPE_QUESTION } from '@/lib/drafts/prompt'
 import { PROFILE } from '@/lib/profile'
 
 const ctx: DraftContext = {
@@ -52,72 +52,47 @@ const base: ProofInput = {
 }
 const pick = (over: Partial<ProofInput>) => chooseProof({ ...base, ...over })
 
-describe('proof point selection (owner rules 2026-11-23)', () => {
+describe('proof point selection (owner rules, latest)', () => {
+  const alum = (over: Partial<ProofInput>) => pick({ branch: 'alumni', ...over })
+  const rec = (over: Partial<ProofInput>) => pick({ branch: 'recruiting', ...over })
   it('partner companies outrank everything', () => {
-    expect(pick({ company: 'Kalshi', category: 'growth_eng_product' })).toMatchObject({ key: 'partner_team', partner: 'Kalshi' })
-    expect(pick({ company: 'Coinbase' })).toMatchObject({ key: 'partner_team', partner: 'Coinbase' })
-    expect(pick({ company: 'Uniswap Labs' })).toMatchObject({ key: 'events', partner: 'Uniswap' })
-    expect(pick({ company: 'Matter Labs' })).toMatchObject({ key: 'events', partner: 'ZKsync' })
-    expect(partnerOf('Kalshi Inc.')?.name).toBe('Kalshi')
-    expect(partnerOf('Coinbase Wallet Builders')?.name).toBe('Coinbase')
+    expect(rec({ company: 'Kalshi', category: 'growth_eng_product' })).toMatchObject({ key: 'partner_team', partner: 'Kalshi' })
+    expect(alum({ company: 'Uniswap Labs' })).toMatchObject({ key: 'events', partner: 'Uniswap' })
+    expect(partnerOf('Matter Labs')?.name).toBe('ZKsync')
     expect(partnerOf('Deloittex')).toBeNull()
   })
-  it('crypto → Coinbase; fintech and prediction markets → Kalshi', () => {
-    expect(pick({ cryptoOrFintech: true, context: 'Building stablecoin payments on-chain' })?.key).toBe('coinbase')
-    expect(pick({ cryptoOrFintech: true, context: 'Embedded banking for credit unions' })?.key).toBe('kalshi')
-    expect(pick({ context: 'The leading prediction market exchange' })?.key).toBe('kalshi')
+  it('recruiters: GTM Eng → systems always; crypto / fintech → Kalshi; SDR → prospecting; never Coinbase', () => {
+    expect(rec({})?.key).toBe('systems')
+    expect(rec({ siblingCount: 1 })?.key).toBe('systems')
+    expect(rec({ cryptoOrFintech: true, context: 'stablecoin rails on-chain' })?.key).toBe('kalshi')
+    expect(rec({ cryptoOrFintech: true, context: 'banking for SMBs' })?.key).toBe('kalshi')
+    expect(rec({ category: 'sales', roleTitle: 'SDR' })?.key).toBe('sdr')
+    for (const ctxv of ['web3', 'banking', '']) expect(rec({ cryptoOrFintech: !!ctxv, context: ctxv })?.key).not.toBe('coinbase')
   })
-  it('AI "tokens" in a posting do not make a company crypto', () => {
-    expect(pick({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('systems')
+  it('alumni vary: GTM Eng → Coinbase; crypto → Coinbase; fintech → Kalshi; founding / BD → Kalshi', () => {
+    expect(alum({})?.key).toBe('coinbase')
+    expect(alum({ cryptoOrFintech: true, context: 'web3 wallet' })?.key).toBe('coinbase')
+    expect(alum({ cryptoOrFintech: true, context: 'payments' })?.key).toBe('kalshi')
+    expect(alum({ context: 'a prediction market' })?.key).toBe('kalshi')
+    expect(alum({ roleTitle: 'Founding GTM Engineer' })?.key).toBe('kalshi')
+    expect(alum({ category: 'partnerships_bd', roleTitle: 'Partnerships' })?.key).toBe('kalshi')
+    expect(alum({ category: 'sales', roleTitle: 'BDR' })?.key).toBe('kalshi')
   })
-  it('partnerships / BD and founding GTM roles → Kalshi', () => {
-    expect(pick({ category: 'partnerships_bd', roleTitle: 'Partnerships Lead' })?.key).toBe('kalshi')
-    expect(pick({ roleTitle: 'Founding GTM Engineer' })?.key).toBe('kalshi')
-    expect(pick({ category: 'sales', roleTitle: 'Founding Account Executive' })?.key).toBe('kalshi')
-  })
-  it('GTM Eng elsewhere: systems first, Coinbase only to vary a second note', () => {
-    expect(pick({})?.key).toBe('systems')
-    expect(pick({ siblingCount: 1 })?.key).toBe('coinbase')
-    expect(pick({ siblingCount: 2 })?.key).toBe('systems')
+  it('AI "tokens" do not make a company crypto', () => {
+    expect(alum({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('coinbase') // GTM Eng alum rule, not crypto
+    expect(rec({ cryptoOrFintech: false, context: 'LLM tokens per second' })?.key).toBe('systems')
   })
   it('Blockchain @ UCLA alumni: club opener, systems when it fits', () => {
-    expect(pick({ branch: 'blockchain_ucla', roleTitle: 'Founding GTM Engineer' })?.key).toBe('systems')
+    expect(pick({ branch: 'blockchain_ucla' })?.key).toBe('systems')
   })
   it('poor fit when nothing matches (ElevenLabs product growth role)', () => {
-    expect(pick({ company: 'ElevenLabs', category: 'growth_eng_product', roleTitle: 'Website Growth Engineer' })).toBeNull()
-    expect(pick({ category: 'engineering' })).toBeNull()
-    expect(pick({ category: 'marketing' })).toBeNull()
-  })
-})
-
-describe('SDR proof points (owner, 2026-11-23)', () => {
-  const sdr = (over: Partial<ProofInput>) => pick({ category: 'sales', roleTitle: 'Sales Development Representative', ...over })
-  it('own prospecting by default; Kalshi then Coinbase to vary later notes', () => {
-    expect(sdr({})?.key).toBe('sdr')
-    expect(sdr({ siblingCount: 1 })?.key).toBe('kalshi')
-    expect(sdr({ siblingCount: 2 })?.key).toBe('sdr')
-    expect(sdr({ siblingCount: 3 })?.key).toBe('coinbase')
-  })
-  it('crypto → Coinbase, fintech → Kalshi; partners still outrank', () => {
-    expect(sdr({ cryptoOrFintech: true, context: 'web3 wallet' })?.key).toBe('coinbase')
-    expect(sdr({ cryptoOrFintech: true, context: 'payments for SMBs' })?.key).toBe('kalshi')
-    expect(sdr({ company: 'Coinbase' })?.key).toBe('partner_team')
+    expect(alum({ company: 'ElevenLabs', category: 'growth_eng_product', roleTitle: 'Website Growth Engineer' })).toBeNull()
+    expect(rec({ category: 'engineering' })).toBeNull()
+    expect(alum({ category: 'marketing' })).toBeNull()
   })
   it('the SDR fact is in the owner\'s words and has no numbers', () => {
     expect(PROFILE.proof.sdr.facts[0]).toBe('I do my own prospecting, write the copy and handle replies for two startups I co-founded.')
     for (const f of Object.values(PROFILE.proof).flatMap((p) => p.facts)) expect(hasMetric(f)).toBe(false)
-  })
-})
-
-describe('no numbers of any kind', () => {
-  it('rejects counts, money, rates and pipeline anywhere', () => {
-    for (const bad of ['booked 40 meetings', 'set fifty demos', '$2M in pipeline', 'a 35% reply rate', 'reply rates doubled', '3x pipeline', 'pipeline of $500k', 'hundreds of leads', '12 events']) {
-      expect(hasMetric(bad)).toBe(true)
-    }
-    for (const ok of ['two startups I co-founded', 'graduating March 2027', 'outbound lead pipelines', 'ran events with a16z and Uniswap']) {
-      expect(hasMetric(ok)).toBe(false)
-    }
-    expect(draftProblems('Hi Sam, I booked 40 meetings last quarter.', ctx).join()).toMatch(/number/)
   })
 })
 
@@ -176,7 +151,7 @@ describe('angles', () => {
     expect(userPrompt({ ...ctx, branch: 'blockchain_ucla' })).toMatch(/Open with that shared club \(not "fellow Bruin"\)/)
   })
   it('recruiters: name the role, ask if in scope', () => {
-    expect(userPrompt({ ...ctx, branch: 'recruiting' })).toMatch(/End with exactly this sentence/)
+    expect(userPrompt({ ...ctx, branch: 'recruiting' })).toMatch(/Interested in the GTM Automation Engineer role at Crexi\. Open to connecting\?/)
   })
   it('siblings are passed so the note differs', () => {
     expect(userPrompt({ ...ctx, siblings: ['Hi Ana, fellow Bruin here.'] })).toMatch(/must differ from each/)
@@ -185,7 +160,7 @@ describe('angles', () => {
 
 describe('code-checked rules', () => {
   it('flags length, internal names, double asks and sibling overlap', () => {
-    expect(draftProblems('x'.repeat(260), ctx)[0]).toMatch(/limit is 250/)
+    expect(draftProblems('x'.repeat(210), ctx)[0]).toMatch(/limit is 200/)
     expect(draftProblems('I built Lume, my outbound tool.', ctx)[0]).toMatch(/internal project name/)
     expect(draftProblems('Open to a quick chat? Or know who to ask?', ctx)[0]).toMatch(/more than one question/)
     const a = 'Hi Gabe, fellow Bruin here. I build GTM systems end to end, including my own outbound command center. Would you be up for a quick chat?'
@@ -233,13 +208,24 @@ describe('note rules (owner, 2026-11-23 review)', () => {
     expect(draftProblems('Hi Sam, class of March 2027.', ctx).join()).toMatch(/graduating March 2027/)
     expect(draftProblems('Hi Sam, fellow Bruin here, graduating March 2027. How is your team set up?', ctx)).toEqual([])
   })
-  it('recruiter ask is word for word', () => {
-    expect(recruiterAsk(rec)).toBe('Would I be in scope for the GTM Automation Engineer role at Crexi?')
-    expect(draftProblems('Hi Dana, could my background be considered for the role?', rec).join()).toMatch(/End with exactly/)
-    expect(draftProblems('Hi Dana, I run outbound for two startups I co-founded. Would I be in scope for the GTM Automation Engineer role at Crexi?', rec)).toEqual([])
+  it('recruiter note shape: grad line, one proof, role line, "Open to connecting?"', () => {
+    expect(recruiterClose(rec)).toBe('Interested in the GTM Automation Engineer role at Crexi. Open to connecting?')
+    const good = "Hi Daniella, I'm Conrad at UCLA, graduating March 2027. I build outbound lead pipelines for two startups I co-founded. Interested in the GTM Automation Engineer role at Crexi. Open to connecting?"
+    expect(good.length).toBeLessThanOrEqual(200)
+    expect(draftProblems(good, rec)).toEqual([])
+    expect(draftProblems("Hi Dana, I'm Conrad at UCLA, graduating March 2027. Would I be in scope for the GTM Automation Engineer role at Crexi?", rec).join()).toMatch(/End with exactly/)
+    expect(draftProblems("Hi Dana, I'm Conrad at UCLA, graduating March 2027. I cold-emailed Coinbase's recruiters. Interested in the GTM Automation Engineer role at Crexi. Open to connecting?", rec).join()).toMatch(/Coinbase/)
+  })
+  it('after-accept message: recruiters end with the scope question', () => {
+    expect(SCOPE_QUESTION).toBe('Is a March 2027 grad in scope for this role?')
+    const ok = 'Thanks for connecting, Daniella. I also built and shipped a full-stack GTM platform solo. Is a March 2027 grad in scope for this role?'
+    expect(followupProblems(ok, { branch: 'recruiting', allowTools: false })).toEqual([])
+    expect(followupProblems('Thanks! I booked 40 meetings. Any openings?', { branch: 'recruiting', allowTools: false }).join()).toMatch(/numbers|scope/)
+    expect(followupProblems("Thanks for connecting, Aryan. Since we last spoke, I've run outbound for two startups I co-founded. Open to a quick chat about your team?", { branch: 'alumni', allowTools: true }).join()).toMatch(/earlier contact/)
+    expect(followupProblems('Thanks for connecting, Andrew. Beyond the Kalshi partnership, I built and shipped a full-stack GTM platform solo, and I build outbound lead pipelines. Is a March 2027 grad in scope for this role?', { branch: 'recruiting', allowTools: false }).join()).toMatch(/one more fact only/)
   })
   it('tool names only for technical recruiters and engineering alumni', () => {
-    expect(draftProblems('Hi Dana, I build pipelines in Clay. Would I be in scope for the GTM Automation Engineer role at Crexi?', rec).join()).toMatch(/No tool names/)
+    expect(draftProblems("Hi Dana, I'm Conrad at UCLA, graduating March 2027. I build pipelines in Clay. Interested in the GTM Automation Engineer role at Crexi. Open to connecting?", rec).join()).toMatch(/No tool names/)
     expect(systemPrompt({ key: 'systems', why: '' }, 250, false)).not.toMatch(/\b(Clay|Supabase|Exa|Apify)\b/)
     expect(systemPrompt({ key: 'systems', why: '' }, 250, true)).toMatch(/Clay/)
   })

@@ -36,6 +36,9 @@ type Constraints = {
 
 const SDR = /\b(sdr|bdr|sales development|business development rep(resentative)?|market development rep(resentative)?)\b/i
 const US = /\b(united states|usa|u\.s\.?a?\.?|us|remote|anywhere)\b/i
+/** A place in the US: country name, a ", ST" state code, or a major US city. */
+const US_PLACE =
+  /\b(united states|usa|u\.s\.)|,\s*(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\b|\b(new york|nyc|brooklyn|san francisco|bay area|oakland|palo alto|mountain view|san jose|los angeles|seattle|austin|boston|chicago|denver|miami|atlanta|dallas|houston|philadelphia|washington|san diego|salt lake|phoenix|portland|minneapolis|nashville|raleigh|pittsburgh|detroit)\b/i
 
 /** Sales roles that are SDR / BDR (allowed) rather than AE (blocked). */
 export function isSdr(job: Pick<FitInput, 'category' | 'title'>): boolean {
@@ -79,6 +82,9 @@ export function fitFlags(job: FitInput, c: Constraints = PROFILE.constraints): F
     // remote within the US passes
   } else if (countryOnly) {
     flags.push({ code: 'location', level: 'info', message: 'Location unknown' })
+  } else if (!locs.some((l) => US_PLACE.test(l))) {
+    // Owner rule (2026-11-23): roles based outside the US block.
+    flags.push({ code: 'location', level: 'block', message: `Based outside the US: ${locs.join(' / ')}` })
   } else {
     flags.push({ code: 'location', level: 'warn', message: `Not ${c.homeLabel}: ${job.work_mode && job.work_mode !== 'unknown' ? `${job.work_mode} in ` : ''}${locs.join(' / ')}` })
   }
