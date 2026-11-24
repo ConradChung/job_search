@@ -7,3 +7,6 @@ next-env.d.ts
 *.tsbuildinfo
 data/
 .vercel
+
+# verify-app verdicts and the Stop hook counter (local only)
+review/
