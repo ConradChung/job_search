@@ -24,7 +24,7 @@ export interface DraftContext {
   /** The company's fit track (gtm_eng, sdr, revops): picks the recruiter after-accept bullets. */
   fitTrack?: string | null
   /** Company research (hook + fit line) for the researched recruiter messages. */
-  research?: { hookSentence: string | null; hookShort: string | null; fitItems: string[] } | null
+  research?: import('./afterAccept').ResearchForMessage | null
   /** The person has a work email on file. */
   hasEmail?: boolean
   /** Notes already drafted for other people at this company (must not be reused). */

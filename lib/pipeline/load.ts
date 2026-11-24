@@ -21,7 +21,7 @@ export async function loadCompanies(db: SupabaseClient): Promise<CompanyView[]> 
     all<PersonRow>(db, 'people', PERSON_COLUMNS),
     all<RunSummary>(db, 'people_runs', 'id, company_key, cost_usd, error, finished_at, rule'),
     db.from('company_settings').select('company_key, fit_override, hold_reason'),
-    db.from('company_research').select('company_key, hook_source_url, hook_title, hook_date, hook_summary, hook_sentence, hook_short, fit_items, hook_reviewed_at, why_no_hook, researched_at, hook_candidates, chosen_index, custom_url'),
+    db.from('company_research').select('company_key, hook_source_url, hook_title, hook_date, hook_summary, hook_sentence, hook_short, fit_items, hook_reviewed_at, why_no_hook, researched_at, hook_candidates, chosen_index, custom_url, li_nohook, email_fit'),
   ])
   const byKey = new Map(((research.data ?? []) as (CompanyResearchView & { company_key: string })[]).map((r) => [r.company_key, r]))
   const rows = (settings.data ?? []) as { company_key: string; fit_override: boolean | null; hold_reason: string | null }[]

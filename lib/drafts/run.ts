@@ -56,7 +56,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
   })
   if (!proof) throw new DraftSkipped('poor fit: nothing in the profile matches this role')
 
-  const { data: rs } = await db.from('company_research').select('hook_sentence, hook_short, fit_items').eq('company_key', p.company_key).maybeSingle()
+  const { data: rs } = await db.from('company_research').select('hook_sentence, li_hook, li_link, email_hook, li_nohook, email_fit').eq('company_key', p.company_key).maybeSingle()
   const ctx: DraftContext = {
     firstName: firstName(p.full_name),
     title: p.title,
@@ -65,7 +65,8 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     roleTitle: noteRoleTitle(fit, extra?.title ?? null),
     roleStatus: extra?.status ?? null,
     fitTrack: fit.track,
-    research: rs && (rs.fit_items as string[])?.length === 3 ? { hookSentence: rs.hook_sentence, hookShort: rs.hook_short, fitItems: rs.fit_items as string[] } : null,
+    // Written sentences (rules v3): a hook only when the chosen one has its wording; else the no-hook line.
+    research: rs && ((rs.hook_sentence && rs.li_hook) || rs.li_nohook) ? { liHook: rs.hook_sentence ? rs.li_hook : null, liLink: rs.hook_sentence ? rs.li_link : null, emailHook: rs.hook_sentence ? rs.email_hook : null, liNohook: rs.li_nohook, emailFit: rs.email_fit } : null,
     hasEmail: !!p.email,
     sdrLeader: fit.track === 'sdr' && (p.branch === 'gtm_leadership' || p.branch === 'executive'),
     mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,

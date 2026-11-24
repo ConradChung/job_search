@@ -89,7 +89,9 @@ export function HookPanel({ companyKey, research: r }: { companyKey: string; res
           {!reviewed && <span className="text-amber">· recruiter messages here can&apos;t be approved or exported until ticked</span>}
         </label>
       )}
-      {fit.length > 0 && <div className="text-fg-46">Fit line: {fit.join(' · ')}</div>}
+      {r.li_nohook && <div className="text-fg-46">Without a hook, LinkedIn says: “{r.li_nohook}”</div>}
+      {r.email_fit && <div className="text-fg-46">Email fit sentence: “{r.email_fit}”</div>}
+      {fit.length > 0 && <div className="text-fg-46">Email draws on: {fit.join(' · ')}</div>}
     </div>
   )
 }
@@ -98,7 +100,7 @@ function Candidate({ c, chosen, disabled, onPick }: { c: HookCandidateView; chos
   return (
     <li className={chosen ? 'rounded-md bg-primary/5 px-2 py-1.5' : 'px-2 py-1.5'}>
       <label className="flex cursor-pointer gap-2">
-        <input type="radio" checked={chosen} disabled={disabled} onChange={onPick} className="mt-0.5 accent-[var(--primary)]" />
+        <input type="radio" checked={chosen} disabled={disabled || !c.li_hook} onChange={onPick} className="mt-0.5 accent-[var(--primary)]" />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex flex-wrap items-center gap-x-2 text-fg">
             <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline-offset-2 hover:underline" onClick={(e) => e.stopPropagation()}>
@@ -111,8 +113,14 @@ function Candidate({ c, chosen, disabled, onPick }: { c: HookCandidateView; chos
           </span>
           <span className="text-fg-70">Idea: {c.idea}</span>
           <span className="text-fg-46">Quote: “{c.evidence}”</span>
-          <span className="text-fg-70">Email: “{c.hook_sentence}”</span>
-          <span className="text-fg-70">LinkedIn: “{c.hook_short}, …”</span>
+          {c.li_hook ? (
+            <>
+              <span className="text-fg-70">LinkedIn: “{c.li_hook} {c.li_link}”</span>
+              <span className="text-fg-70">Email: “{c.email_hook}”</span>
+            </>
+          ) : (
+            <span className="text-amber">The wording for this one failed the checks; it can&apos;t be picked.</span>
+          )}
         </span>
       </label>
     </li>

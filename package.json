@@ -23,7 +23,8 @@
     "recruiter-followups": "tsx --env-file=.env.local scripts/recruiter-followups.ts",
     "research": "tsx --conditions=react-server --env-file=.env.local scripts/research.ts",
     "find-emails": "tsx --env-file=.env.local scripts/find-emails.ts",
-    "revalidate-hooks": "tsx --conditions=react-server --env-file=.env.local scripts/revalidate-hooks.ts"
+    "revalidate-hooks": "tsx --conditions=react-server --env-file=.env.local scripts/revalidate-hooks.ts",
+    "write-hooks": "tsx --conditions=react-server --env-file=.env.local scripts/write-hooks.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

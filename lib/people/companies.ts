@@ -69,6 +69,8 @@ export interface CompanyResearchView {
   hook_candidates: HookCandidateView[]
   chosen_index: number | null
   custom_url: string | null
+  li_nohook: string | null
+  email_fit: string | null
 }
 
 export interface HookCandidateView {
@@ -83,6 +85,10 @@ export interface HookCandidateView {
   role_clause: string
   hook_sentence: string
   hook_short: string
+  li_hook?: string
+  li_link?: string
+  li_item?: string
+  email_hook?: string
 }
 
 export interface CompanyView {

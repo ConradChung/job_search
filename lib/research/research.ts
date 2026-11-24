@@ -51,6 +51,11 @@ export interface HookCandidate {
   role_clause: string
   hook_sentence: string
   hook_short: string
+  /** Written sentences (lib/research/write.ts); a candidate without them can't be used. */
+  li_hook?: string
+  li_link?: string
+  li_item?: string
+  email_hook?: string
 }
 
 export interface ResearchInput {
@@ -302,11 +307,16 @@ export function groundingProblems(c: { idea: string; evidence: string }, item: S
 /** Show or outlet names the hook attributes the idea to ("Stevie Case's Operators Said episode" → "Operators Said"). */
 export function namedShows(text: string): string[] {
   const out: string[] = []
-  const re = /((?:[A-Z][\w.&'’-]*\s+){0,4}[A-Z][\w.&-]*)\s+(episode|podcast|interview|talk|keynote|webinar|newsletter|show|session|panel)\b/g
+  const kw = ['episode', 'podcast', 'interview', 'talk', 'keynote', 'webinar', 'newsletter', 'show', 'session', 'panel', 'roundtable', 'fireside', 'summit', 'conference']
+    .map((w) => `[${w[0].toUpperCase()}${w[0]}]${w.slice(1)}`)
+    .join('|')
+  const re = new RegExp(`((?:[A-Z][\\w.&'’-]*\\s+){0,4}[A-Z][\\w.&-]*)\\s+(${kw})\\b`, 'g')
   for (const m of text.matchAll(re)) {
+    // A capitalised show word is part of the name ("GTM Roundtable", "Crew Podcast").
+    const full = /^[A-Z]/.test(m[2]) ? `${m[1]} ${m[2]}` : m[1]
     // Drop the person part of a possessive ("Patrick Forquer's GTMnow" → "GTMnow"); a bare possessive is a person, not a show.
-    const parts = m[1].split(/['’]s\s+/)
-    const show = parts.length > 1 ? parts[parts.length - 1] : /['’]s$/.test(m[1]) ? '' : m[1]
+    const parts = full.split(/['’]s\s+/)
+    const show = parts.length > 1 ? parts[parts.length - 1] : /['’]s$/.test(full) ? '' : full
     const clean = show.replace(/^(the|a|an|his|her|their|your)\s+/i, '').trim()
     if (clean && !/^(I|I've|I'm|Loved|Enjoyed|Really|The)$/i.test(clean)) out.push(clean)
   }

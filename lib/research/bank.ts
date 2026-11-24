@@ -61,3 +61,17 @@ export function fitPhrase(keys: string[], channel: 'email' | 'linkedin'): string
   if (ok.length !== 3 || new Set(ok).size !== 3) return null
   return joinItems(ok.map((k) => EXPERIENCE_BANK[k][channel]))
 }
+
+/**
+ * Facts that bound what any message may claim (owner, 2026-11-23). Not selectable
+ * as a fit item; the writer must respect them.
+ */
+export const BANK_FACTS = ['Most of my outbound to date has been email and LinkedIn; I have not done cold calling.'] as const
+
+/** Names a message may use about Conrad's own experience: the bank's, nothing else. */
+export const BANK_NAMES = ['Kalshi', 'Blockchain', 'UCLA', 'Coinbase', 'Noble', 'Mobile', 'Clay', 'Apify', 'Exa', 'Claude', 'Code', 'MCP', 'Python', 'SQL', 'TypeScript', 'LinkedIn', 'GTM', 'AI']
+
+/** Every allowed fact, for the writer's prompt. */
+export function bankFactsText(): string {
+  return [...BANK_KEYS.map((k) => `- ${k}: ${EXPERIENCE_BANK[k].email}`), ...BANK_FACTS.map((f) => `- fact: ${f}`)].join('\n')
+}

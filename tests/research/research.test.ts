@@ -1,42 +1,53 @@
 import { describe, expect, it } from 'vitest'
 import { afterAcceptEmail, afterAcceptEmailProblems, afterAcceptMessage, afterAcceptProblems, afterAcceptTrack } from '@/lib/drafts/afterAccept'
 import { fitPhrase, joinItems } from '@/lib/research/bank'
+import { checkWording, conradSentenceProblems, hookSentenceProblems } from '@/lib/research/write'
 import { attributionProblems, domainOf, fitProblems, groundingProblems, namedShows, highlightQuery, hookProblems, toCandidates, usableSources, type SourceItem } from '@/lib/research/research'
 import { hookGated } from '@/lib/research/gate'
 import { pickForExport, toCsv, parseCsv, type ExportCandidate } from '@/lib/export/csv'
 import { EXPORT_COLUMNS, type ExportRow } from '@/lib/export/columns'
 
 const note = "Hi Renee, I'm Conrad at UCLA, graduating March 2027. I built a full-stack GTM platform solo. Interested in the GTM Engineer role at Engine. Open to connecting?"
-const research = { hookSentence: "I enjoyed your post on how Engine rebuilt its booking agent, especially the choice to keep a human in the loop for edge cases.", hookShort: 'I enjoyed your post on rebuilding the booking agent', fitItems: ['outbound', 'enrichment', 'agentic'] }
+const research = {
+  liHook: "I enjoyed Stevie Case's point that cold calling is Vanta's main pipeline source, with SDRs paired one to one with AEs.",
+  liLink: "Most of my outbound so far has been email and LinkedIn, so I haven't done cold calling yet and it's the skill I most want to learn.",
+  emailHook: "I really enjoyed Stevie Case's Operators Said episode, especially that cold calling is Vanta's main pipeline source. Learning to open conversations by phone is exactly what I want from an SDR role.",
+  liNohook: 'Building outbound systems end to end, from signals to sequencing, is the work I most want to keep doing.',
+  emailFit: 'I think the role is a good fit because I have built outbound systems end to end, written cold outreach that turned into Coinbase recruiting initiatives, and closed a partnership with Kalshi for Blockchain @ UCLA.',
+}
 const base = { firstName: 'Renee', branch: 'recruiting', title: 'Recruiter', company: 'Engine', roleTitle: 'GTM Engineer', fitTrack: 'gtm_eng', note }
 
-describe('researched recruiter messages (owner, 2026-11-23)', () => {
-  it('LinkedIn: hook, inbox line when there is an email, fit line from the bank', () => {
+describe('researched recruiter messages (owner, 2026-11-23, writing rules v3)', () => {
+  it('LinkedIn: three short paragraphs, hook sentence then link sentence, no inbox line', () => {
     const t = afterAcceptMessage({ ...base, research, hasEmail: true }).text
-    expect(t).toBe(
-      "Thanks for connecting, Renee! I applied to the GTM Engineer role and sent a short note to your inbox too. I enjoyed your post on rebuilding the booking agent, and I think my experience in building outbound systems end to end, data enrichment in Clay, Apify and Exa, and agentic workflows with Claude Code and MCP lines up well. Thank you for considering me!"
-    )
+    expect(t).toBe(`Thanks for connecting, Renee! I applied for the GTM Engineer role.\n\n${research.liHook} ${research.liLink}\n\nThanks for considering me!`)
+    expect(t).not.toMatch(/inbox/)
     expect(afterAcceptProblems(t, note, 'Engine')).toEqual([])
   })
-  it('LinkedIn: no hook drops the hook; no email drops the inbox line', () => {
-    const t = afterAcceptMessage({ ...base, research: { ...research, hookShort: null, hookSentence: null }, hasEmail: false }).text
-    expect(t).toBe("Thanks for connecting, Renee! I applied to the GTM Engineer role. I think my experience in building outbound systems end to end, data enrichment in Clay, Apify and Exa, and agentic workflows with Claude Code and MCP lines up well. Thank you for considering me!")
+  it('LinkedIn: no hook uses the one-sentence fit line', () => {
+    const t = afterAcceptMessage({ ...base, research: { ...research, liHook: null, liLink: null, emailHook: null } }).text
+    expect(t).toBe(`Thanks for connecting, Renee! I applied for the GTM Engineer role.\n\n${research.liNohook}\n\nThanks for considering me!`)
     expect(afterAcceptProblems(t, note, 'Engine')).toEqual([])
   })
-  it('email: subject, template paragraphs and line breaks; no hook drops that paragraph', () => {
+  it('LinkedIn checks: never "and my experience", never presume the job, three paragraphs', () => {
+    const t = afterAcceptMessage({ ...base, research }).text
+    expect(afterAcceptProblems(t.replace(research.liLink, ', and I think my experience in outbound lines up well.'), note, 'Engine').join()).toMatch(/"and"/)
+    expect(afterAcceptProblems(t.replace(research.liLink, 'I would love to book meetings for my AE.'), note, 'Engine').join()).toMatch(/already has the job/)
+    expect(afterAcceptProblems(t.replace('\n\nThanks for considering me!', ' Thanks for considering me!'), note, 'Engine').join()).toMatch(/Three short paragraphs/)
+  })
+  it('email: hook paragraph, written fit sentence, no hook drops that paragraph', () => {
     const e = afterAcceptEmail({ ...base, research })!
     expect(e.subject).toBe('Thank you! - GTM Engineer')
     expect(e.body).toBe(
       "Hi Renee,\n\nI hope you're having a great week! I recently applied to the GTM Engineer role at Engine and wanted to reach out directly to say how excited I am about it.\n\n" +
-        `${research.hookSentence}\n\n` +
-        'I think the role is a strong fit for my experience in building outbound systems end to end (signals, enrichment, scoring, routing, sequencing), data enrichment pipelines in Clay, Apify and Exa, and agentic workflows with Claude Code and MCP.\n\n' +
-        'Thank you in advance for your consideration!\n\nBest,\nConrad'
+        `${research.emailHook}\n\n${research.emailFit}\n\nThank you in advance for your consideration!\n\nBest,\nConrad`
     )
     expect(afterAcceptEmailProblems(e, 'Engine')).toEqual([])
-    const n = afterAcceptEmail({ ...base, research: { ...research, hookSentence: null, hookShort: null } })!
-    expect(n.body).not.toContain('booking agent')
+    const n = afterAcceptEmail({ ...base, research: { ...research, liHook: null, liLink: null, emailHook: null } })!
+    expect(n.body).not.toContain('Stevie')
     expect(afterAcceptEmailProblems(n, 'Engine')).toEqual([])
-    expect(afterAcceptEmailProblems({ ...e, body: e.body.replace('Thank you in advance', 'We booked 40 meetings. Thank you in advance') }, 'Engine').join()).toMatch(/numbers/)
+    expect(afterAcceptEmailProblems({ ...e, body: e.body.replace(research.emailFit, 'I think the role is a strong fit for my experience in a, b and c.') }, 'Engine').join()).toMatch(/list of labels/)
+    expect(afterAcceptEmailProblems({ ...e, body: e.body.replace('Thank you in advance', 'Happy to help my AE. Thank you in advance') }, 'Engine').join()).toMatch(/already has the job/)
   })
   it('job posters get the recruiter messages; leaders, founders and alumni do not', () => {
     expect(afterAcceptTrack('poster')).toBe('recruiter')
@@ -56,7 +67,43 @@ describe('researched recruiter messages (owner, 2026-11-23)', () => {
   })
 })
 
-describe('research checks (v2: role-relevant ideas)', () => {
+describe('writing checks (rules v3)', () => {
+  const names = ['Vanta', 'SDR', 'Stevie Case']
+  it('link sentences: honest about cold calling, no tools or names outside the bank, one sentence, no presuming the job', () => {
+    expect(conradSentenceProblems(research.liLink, names, 30)).toEqual([])
+    expect(conradSentenceProblems('I have run cold calling blocks for two startups.', names, 30).join()).toMatch(/cold-calling|number/)
+    expect(conradSentenceProblems('I built our Salesforce routing at ZenPort.', names, 30).join()).toMatch(/tool not in the bank|Names not in the bank/)
+    expect(conradSentenceProblems('I wrote cold outreach that turned into Coinbase recruiting initiatives.', names, 30)).toEqual([])
+    expect(conradSentenceProblems('And I like outbound. It is fun.', names, 30).join()).toMatch(/And|More than one/)
+    expect(conradSentenceProblems('I want to book meetings for my AE.', names, 30).join()).toMatch(/already has the job/)
+    expect(conradSentenceProblems('Most of my outbound has been email and LinkedIn, and I want to learn the phone.', names, 30)).toEqual([])
+  })
+  it('hook sentences: about the company only, one sentence on LinkedIn', () => {
+    expect(hookSentenceProblems(research.liHook, 25, 1)).toEqual([])
+    expect(hookSentenceProblems("I enjoyed Stevie's point on cold calling, and I've done a lot of it myself.", 25, 1).join()).toMatch(/claims experience/)
+    expect(hookSentenceProblems('I liked it. Also this.', 25, 1).join()).toMatch(/sentence/)
+  })
+  it('a candidate whose wording fails keeps none (never patched)', () => {
+    const cand = { url: 'u', title: 'Inside Vanta', date: null, kind: 'gtm_leader' as const, speaker: 'Stevie Case', speaker_title: 'CRO', idea: 'cold calling is the main source', evidence: 'x', role_clause: 'y', hook_sentence: "I enjoyed Stevie Case's Operators Said episode.", hook_short: 'w' }
+    const out = {
+      candidates: [
+        { index: 0, li_hook: research.liHook, li_link: research.liLink, li_item: 'outreach' as const, email_hook: research.emailHook },
+        { index: 1, li_hook: research.liHook, li_link: 'I have years of cold calling at Gong.', li_item: 'outreach' as const, email_hook: research.emailHook },
+      ],
+      li_nohook: research.liNohook,
+      li_nohook_item: 'outbound' as const,
+      email_fit: research.emailFit,
+    }
+    const r = checkWording(out, 'Vanta', 'Early Stage SDR', [cand, { ...cand, url: 'v' }])
+    expect(r.perCandidate[0]).toMatchObject({ li_item: 'outreach' })
+    expect(r.perCandidate[1]).toBeNull()
+    expect(r.company?.email_fit).toBe(research.emailFit)
+    expect(r.problems.join()).toMatch(/\[1\]/)
+  })
+})
+
+describe('research checks (v2: role-relevant ideas)'
+, () => {
   const now = new Date('2026-11-23T00:00:00Z')
   const body = 'Patrick Forquer on how Legora sells. We staff post-sale two to one against pre-sale, because expansion is where the account is won. Legal engineers run every pilot instead of solutions consultants.'
   const item = (over: Partial<SourceItem> = {}): SourceItem => ({ url: 'https://gtmnow.com/gtm-208-legora', title: 'How Legora scaled its direct sales motion', publishedDate: '2026-10-06', text: body, highlights: [], via: 'test', ...over })
