@@ -15,6 +15,10 @@ export const EXPORT_COLUMNS = [
   { key: 'role', header: 'role' },
   { key: 'note', header: 'note' },
   { key: 'after_accept_message', header: 'after_accept_message' },
+  // Researched recruiter email for the owner's Gmail pipeline (empty when there is no email or no research).
+  { key: 'email', header: 'email' },
+  { key: 'email_subject', header: 'email_subject' },
+  { key: 'email_body', header: 'email_body' },
   { key: 'role_status', header: 'role_status' },
   { key: 'company_id', header: 'company_id' },
   { key: 'person_id', header: 'person_id' },

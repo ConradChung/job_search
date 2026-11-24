@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { DraftSkipped, draftContext } from './run'
 import { draftProblems } from './prompt'
+import { hookGated, HOOK_GATE_MESSAGE, unreviewedHookCompanies } from '@/lib/research/gate'
 
 /**
  * Every code check a note must pass (length, banned phrases, numbers, proof-point
@@ -31,11 +32,16 @@ export interface BulkApproveResult {
 export async function approveNotes(db: SupabaseClient, ids: number[]): Promise<BulkApproveResult> {
   const out: BulkApproveResult = { approved: [], refused: [], skipped: 0 }
   if (!ids.length) return out
-  const { data, error } = await db.from('people').select('id, full_name, company, outreach_status, draft').in('id', ids)
+  const { data, error } = await db.from('people').select('id, full_name, company, company_key, branch, outreach_status, draft').in('id', ids)
   if (error) throw new Error(error.message)
+  const unreviewed = await unreviewedHookCompanies(db, (data ?? []).map((p) => p.company_key))
   for (const p of data ?? []) {
     if (p.outreach_status !== 'drafted' || !p.draft) {
       out.skipped++
+      continue
+    }
+    if (hookGated(p, unreviewed)) {
+      out.refused.push({ id: p.id, name: p.full_name, company: p.company, problems: [HOOK_GATE_MESSAGE] })
       continue
     }
     const problems = await noteProblems(db, p.id, p.draft)

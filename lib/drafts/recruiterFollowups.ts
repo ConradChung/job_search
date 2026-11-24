@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { DraftSkipped, draftContext } from './run'
-import { afterAcceptMessage, afterAcceptProblems } from './afterAccept'
+import { afterAcceptEmail, afterAcceptEmailProblems, afterAcceptMessage, afterAcceptProblems } from './afterAccept'
 
 export interface FollowupChange {
   id: number
@@ -11,6 +11,7 @@ export interface FollowupChange {
   note: string
   before: string | null
   after: string
+  email: { subject: string; body: string } | null
   problems: string[]
 }
 
@@ -22,8 +23,8 @@ export interface FollowupChange {
 export async function refreshRecruiterFollowups(db: SupabaseClient, opts: { companyKey?: string; write: boolean; branches?: string[] }) {
   let q = db
     .from('people')
-    .select('id, company, full_name, branch, outreach_status, draft, followup')
-    .in('branch', opts.branches ?? ['recruiting'])
+    .select('id, company, full_name, branch, outreach_status, draft, followup, email_subject, email_body')
+    .in('branch', opts.branches ?? ['recruiting', 'poster'])
     .in('outreach_status', ['drafted', 'approved'])
     .not('draft', 'is', null)
     .order('company_key')
@@ -45,12 +46,14 @@ export async function refreshRecruiterFollowups(db: SupabaseClient, opts: { comp
     }
     if (!loaded) continue
     const { ctx } = loaded
-    const after = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, fitTrack: ctx.fitTrack, note: p.draft }).text
-    if (after === p.followup) continue
-    const problems = afterAcceptProblems(after, p.draft, ctx.company)
-    changes.push({ id: p.id, branch: p.branch, company: p.company, full_name: p.full_name, status: p.outreach_status, note: p.draft, before: p.followup, after, problems })
+    const input = { firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, fitTrack: ctx.fitTrack, research: ctx.research, hasEmail: ctx.hasEmail, note: p.draft }
+    const after = afterAcceptMessage(input).text
+    const email = afterAcceptEmail(input)
+    if (after === p.followup && (email?.subject ?? null) === p.email_subject && (email?.body ?? null) === p.email_body) continue
+    const problems = [...afterAcceptProblems(after, p.draft, ctx.company), ...(email ? afterAcceptEmailProblems(email, ctx.company).map((x) => `email: ${x}`) : [])]
+    changes.push({ id: p.id, branch: p.branch, company: p.company, full_name: p.full_name, status: p.outreach_status, note: p.draft, before: p.followup, after, email, problems })
     if (opts.write && !problems.length) {
-      const { error: e } = await db.from('people').update({ followup: after }).eq('id', p.id)
+      const { error: e } = await db.from('people').update({ followup: after, email_subject: email?.subject ?? null, email_body: email?.body ?? null }).eq('id', p.id)
       if (e) throw new Error(`save follow-up: ${e.message}`)
     }
   }

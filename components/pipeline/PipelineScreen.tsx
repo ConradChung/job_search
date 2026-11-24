@@ -14,6 +14,7 @@ import { draftTargetIds } from '@/lib/drafts/targets'
 import { cn } from '@/lib/utils'
 import type { CompanyJob, CompanyView } from '@/lib/people/companies'
 import { blocks, FIT_TRACKS, tierOf, type FitTrack } from '@/lib/jobs/fit'
+import { HookPanel } from './HookPanel'
 import { ExportPanel, ImportButton } from './ExportPanel'
 import { RequestsPanel } from './RequestsPanel'
 import type { PendingAction } from '@/lib/actions/pending'
@@ -919,6 +920,7 @@ function CompanyTree({
           </div>
         )}
         {c.draftPaused && <div>Drafting is paused for the {trackLabel(c.fitTrack)} track.</div>}
+        {c.research && <HookPanel companyKey={c.key} research={c.research} />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">

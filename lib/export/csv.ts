@@ -13,7 +13,7 @@ export function csvField(v: string): string {
 }
 
 /** Fields whose line breaks are part of the message (kept, quoted); every other field is one line. */
-export const MULTILINE_COLUMNS: ReadonlySet<string> = new Set(['after_accept_message'])
+export const MULTILINE_COLUMNS: ReadonlySet<string> = new Set(['after_accept_message', 'email_body'])
 
 /** Line breaks kept as \n (the row separator stays CRLF); the field is quoted by csvField. */
 export function keepLines(v: string | null | undefined): string {
@@ -105,6 +105,8 @@ export interface ExportCandidate {
   company: string
   /** Recruiter whose role isn't marked Applied: their message says "I've applied", so they wait ("apply first"). */
   applyFirst?: boolean
+  /** Messages use the company's researched hook and the owner hasn't ticked "I've read this". */
+  hookUnread?: boolean
 }
 
 /**
@@ -119,7 +121,8 @@ export function pickForExport(cands: ExportCandidate[], opts: { tiers: number[];
     .sort((a, b) => a.tier - b.tier || a.order - b.order)
   const noUrl = eligible.filter((c) => !normalizeLinkedIn(c.url))
   const applyFirst = eligible.filter((c) => normalizeLinkedIn(c.url) && c.applyFirst)
-  const withUrl = eligible.filter((c) => normalizeLinkedIn(c.url) && !c.applyFirst)
+  const hookUnread = eligible.filter((c) => normalizeLinkedIn(c.url) && !c.applyFirst && c.hookUnread)
+  const withUrl = eligible.filter((c) => normalizeLinkedIn(c.url) && !c.applyFirst && !c.hookUnread)
   const chosen = opts.limit ? withUrl.slice(0, opts.limit) : withUrl
-  return { chosen, noUrl, applyFirst, available: withUrl.length }
+  return { chosen, noUrl, applyFirst, hookUnread, available: withUrl.length }
 }

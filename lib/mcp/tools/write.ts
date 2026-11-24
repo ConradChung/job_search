@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hookGateProblem } from '@/lib/research/gate'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import { noteProblems } from '@/lib/drafts/check'
@@ -18,9 +19,11 @@ import { defineTool, INTERNAL_APPEND, INTERNAL_WRITE, type ToolDef } from '../to
 export type WriteDeps = {
   db: () => SupabaseClient
   check: typeof noteProblems
+  /** Researched-hook gate (null = fine). Optional so tests can leave it out. */
+  hookGate?: typeof hookGateProblem
   refreshFollowups: typeof refreshRecruiterFollowups
 }
-export const writeDeps: WriteDeps = { db: () => createServiceClient(), check: noteProblems, refreshFollowups: refreshRecruiterFollowups }
+export const writeDeps: WriteDeps = { db: () => createServiceClient(), check: noteProblems, hookGate: hookGateProblem, refreshFollowups: refreshRecruiterFollowups }
 
 const ROLE_STATUSES = ['new', 'applied', 'interviewing', 'rejected', 'not_fit'] as const
 const PERSON_STATUSES = ['sent', 'replied', 'no_reply'] as const
@@ -96,6 +99,8 @@ export function makeWriteTools(deps: WriteDeps = writeDeps): ToolDef[] {
       if (p.outreach_status !== 'drafted' || !p.draft) throw new McpUserError(`Only Drafted notes can be approved; this one is ${p.outreach_status}${p.draft ? '' : ' with no note'}.`)
       const problems = await deps.check(db, person_id, p.draft)
       if (problems.length) throw new McpUserError(`Not approved; the note fails the checks: ${problems.join(' ')}`)
+      const gate = deps.hookGate ? await deps.hookGate(db, person_id) : null
+      if (gate) throw new McpUserError(`Not approved: ${gate}`)
       const { error } = await db.from('people').update({ outreach_status: 'approved' }).eq('id', person_id).eq('outreach_status', 'drafted')
       if (error) throw new Error(error.message)
       return { data: { person_id, status: 'approved', warnings: draftWarnings(p.draft) }, refs: { person: String(person_id) } }

@@ -142,6 +142,11 @@ export function ExportPanel({ visible, tiers, onClose, onExported }: { visible: 
           {preview.applyFirst.map((p) => `${p.name} (${p.company}): ${p.role}, ${p.status}`)}
         </Problem>
       ) : null}
+      {preview?.hookUnread?.length ? (
+        <Problem tone="warn" title={`Hook not read: ${preview.hookUnread.length} row${preview.hookUnread.length === 1 ? ' is' : 's are'} held out until you tick "I've read this" on the company's researched hook.`}>
+          {preview.hookUnread.map((p) => `${p.name} (${p.company})`)}
+        </Problem>
+      ) : null}
       {preview?.noUrl.length ? (
         <Problem tone="warn" title={`Skipped ${preview.noUrl.length} without a LinkedIn profile URL:`}>
           {preview.noUrl.map((p) => `${p.name} (${p.company})`)}

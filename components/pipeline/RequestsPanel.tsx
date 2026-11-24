@@ -96,6 +96,7 @@ export function RequestsPanel({ actions, busy, run, onChanged }: { actions: Pend
                   {list.slice(0, 8).join(', ')}
                   {list.length > 8 ? ` +${list.length - 8}` : ''}
                   {a.kind === 'export_csv' && Number(a.preview.apply_first) > 0 ? ` · ${a.preview.apply_first} recruiter rows held until the role is Applied` : ''}
+                  {a.kind === 'export_csv' && Number(a.preview.hook_unread) > 0 ? ` · ${a.preview.hook_unread} held until you read the hook` : ''}
                 </div>
               </div>
               <Button variant="ghost" size="sm" onClick={() => reject(a)} disabled={!!working || busy}>

@@ -230,6 +230,7 @@ const exportPreview = defineTool({
         noUrl: r.noUrl.map((p) => ({ ...p, name: untrusted(p.name, 80) })),
         overLimit: r.overLimit.map((p) => ({ ...p, name: untrusted(p.name, 80) })),
         applyFirst: r.applyFirst.map((p) => ({ ...p, name: untrusted(p.name, 80) })),
+        hookUnread: r.hookUnread.map((p) => ({ ...p, name: untrusted(p.name, 80) })),
         people: r.people.map((p) => ({ id: p.id, name: untrusted(p.name, 80), company: p.company })),
         note: 'Preview only. To export, use jobhunt_request_export_csv; the owner confirms it in the app.',
       },

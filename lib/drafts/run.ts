@@ -28,7 +28,7 @@ export class DraftSkipped extends Error {}
 export async function draftContext(db: SupabaseClient, personId: number) {
   const { data: p, error } = await db
     .from('people')
-    .select('id, company_key, company, full_name, title, branch, outreach_status')
+    .select('id, company_key, company, full_name, title, branch, outreach_status, email')
     .eq('id', personId)
     .maybeSingle()
   if (error) throw new Error(`load person: ${error.message}`)
@@ -56,6 +56,7 @@ export async function draftContext(db: SupabaseClient, personId: number) {
   })
   if (!proof) throw new DraftSkipped('poor fit: nothing in the profile matches this role')
 
+  const { data: rs } = await db.from('company_research').select('hook_sentence, hook_short, fit_items').eq('company_key', p.company_key).maybeSingle()
   const ctx: DraftContext = {
     firstName: firstName(p.full_name),
     title: p.title,
@@ -64,6 +65,8 @@ export async function draftContext(db: SupabaseClient, personId: number) {
     roleTitle: noteRoleTitle(fit, extra?.title ?? null),
     roleStatus: extra?.status ?? null,
     fitTrack: fit.track,
+    research: rs && (rs.fit_items as string[])?.length === 3 ? { hookSentence: rs.hook_sentence, hookShort: rs.hook_short, fitItems: rs.fit_items as string[] } : null,
+    hasEmail: !!p.email,
     sdrLeader: fit.track === 'sdr' && (p.branch === 'gtm_leadership' || p.branch === 'executive'),
     mentionRole: functionScore(p.title ?? '', trackOf(role?.category)) === 2,
     allowTools:
@@ -88,6 +91,8 @@ export async function draftForPerson(db: SupabaseClient, client: DraftClient, pe
   const update: Record<string, unknown> = {
     draft: r.text,
     followup: f.text,
+    email_subject: f.email?.subject ?? null,
+    email_body: f.email?.body ?? null,
     draft_generated_at: new Date().toISOString(),
     draft_model: r.model,
     draft_cost_usd: r.cost + f.cost,
@@ -105,7 +110,7 @@ export async function followupForPerson(db: SupabaseClient, client: DraftClient,
   const { data } = await db.from('people').select('draft').eq('id', personId).single()
   if (!data?.draft) throw new Error('no note to follow up')
   const f = await generateFollowup(client, loaded.ctx, data.draft)
-  const { error } = await db.from('people').update({ followup: f.text }).eq('id', personId)
+  const { error } = await db.from('people').update({ followup: f.text, email_subject: f.email?.subject ?? null, email_body: f.email?.body ?? null }).eq('id', personId)
   if (error) throw new Error(`save follow-up: ${error.message}`)
   return f
 }

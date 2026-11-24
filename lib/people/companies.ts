@@ -54,8 +54,24 @@ export interface RunSummary {
   rule: string | null
 }
 
+/** Researched hook and fit line for the after-accept messages (lib/research). */
+export interface CompanyResearchView {
+  hook_source_url: string | null
+  hook_title: string | null
+  hook_date: string | null
+  hook_summary: string | null
+  hook_sentence: string | null
+  hook_short: string | null
+  fit_items: string[]
+  hook_reviewed_at: string | null
+  why_no_hook: string | null
+  researched_at: string
+}
+
 export interface CompanyView {
   key: string
+  /** Set by loadCompanies when the company has been researched. */
+  research?: CompanyResearchView | null
   name: string
   website: string | null
   linkedin: string | null

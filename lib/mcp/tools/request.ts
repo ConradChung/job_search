@@ -92,6 +92,7 @@ const exportCsv = defineTool({
       people: r.people.map((p) => ({ id: p.id, company: p.company })),
       no_url: r.noUrl.length,
       apply_first: r.applyFirst.length,
+      hook_unread: r.hookUnread.length,
     }
     const action = await createPendingAction(db, {
       kind: 'export_csv',

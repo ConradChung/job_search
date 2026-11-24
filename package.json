@@ -20,7 +20,9 @@
     "weekly": "tsx --conditions=react-server --env-file=.env.local scripts/weekly.ts",
     "review-csv": "tsx --conditions=react-server --env-file=.env.local scripts/review-csv.ts",
     "export-csv": "tsx --env-file=.env.local scripts/export-csv.ts",
-    "recruiter-followups": "tsx --env-file=.env.local scripts/recruiter-followups.ts"
+    "recruiter-followups": "tsx --env-file=.env.local scripts/recruiter-followups.ts",
+    "research": "tsx --conditions=react-server --env-file=.env.local scripts/research.ts",
+    "find-emails": "tsx --env-file=.env.local scripts/find-emails.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

@@ -30,6 +30,10 @@ export interface PersonRow {
   notes: string | null
   draft: string | null
   followup: string | null
+  email: string | null
+  email_status: string | null
+  email_subject: string | null
+  email_body: string | null
   draft_generated_at: string | null
   draft_cost_usd: number | null
   /** Set when the person went out in a sender CSV (GTM-22). */
@@ -37,4 +41,4 @@ export interface PersonRow {
 }
 
 export const PERSON_COLUMNS =
-  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, followup, draft_generated_at, draft_cost_usd, exported_at'
+  'id, company_key, full_name, title, linkedin_url, branch, level, is_ucla, in_blockchain_ucla, rank, source, confidence, outreach_status, last_contacted_at, notes, draft, followup, email, email_status, email_subject, email_body, draft_generated_at, draft_cost_usd, exported_at'

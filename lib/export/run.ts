@@ -5,6 +5,7 @@ import { noteRoleTitle } from '@/lib/drafts/run'
 import { shortRole } from '@/lib/drafts/prompt'
 import { tierOf } from '@/lib/jobs/fit'
 import { IMPORT_STATUS_HEADERS, IMPORT_STATUS_MAP, IMPORT_URL_HEADERS, type ExportRow } from './columns'
+import { hookGated, RESEARCHED_BRANCHES, unreviewedHookCompanies } from '@/lib/research/gate'
 import { contactType, normalizeLinkedIn, parseCsv, pickForExport, splitName, toCsv, type ExportCandidate } from './csv'
 
 export interface ExportOptions {
@@ -26,6 +27,8 @@ export interface ExportResult {
   overLimit: (Listed & { length: number })[]
   /** Recruiters held out of the file until their role is marked Applied (their message says "I've applied"). */
   applyFirst: (Listed & { role: string; status: string; link: string | null })[]
+  /** Held out until the owner ticks "I've read this" on the company's researched hook. */
+  hookUnread: Listed[]
   people: Listed[]
   csv?: string
   filename?: string
@@ -39,13 +42,14 @@ export interface ExportResult {
 export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<ExportResult> {
   const { data: people, error } = await db
     .from('people')
-    .select('id, company_key, company, full_name, title, branch, linkedin_url, outreach_status, draft, followup')
+    .select('id, company_key, company, full_name, title, branch, linkedin_url, outreach_status, draft, followup, email, email_subject, email_body')
     .in('id', o.ids.length ? o.ids : [-1])
   if (error) throw new Error(error.message)
 
   const companies = new Map<string, Awaited<ReturnType<typeof loadCompany>>>()
   for (const k of new Set((people ?? []).map((p) => p.company_key))) companies.set(k, await loadCompany(db, k))
 
+  const unreviewed = await unreviewedHookCompanies(db, (people ?? []).map((p) => p.company_key))
   const order = new Map(o.ids.map((id, i) => [id, i]))
   const byId = new Map((people ?? []).map((p) => [p.id, p]))
   const cands: ExportCandidate[] = (people ?? []).map((p) => {
@@ -60,7 +64,9 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
       url: p.linkedin_url,
       name: p.full_name,
       company: p.company,
-      applyFirst: p.branch === 'recruiting' && roleStatus !== 'applied',
+      // The researched messages (recruiters and job posters) say "I applied": held until the role is Applied, email included.
+      applyFirst: RESEARCHED_BRANCHES.includes(p.branch) && roleStatus !== 'applied',
+      hookUnread: hookGated(p, unreviewed),
     }
   })
   const picked = pickForExport(cands, { tiers: o.tiers, includeExported: o.includeExported, limit: o.limit })
@@ -93,6 +99,9 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
       role: roleTitle,
       note,
       after_accept_message: p.followup ?? '',
+      email: p.email_body ? (p.email ?? '') : '',
+      email_subject: p.email && p.email_body ? (p.email_subject ?? '') : '',
+      email_body: p.email && p.email_body ? p.email_body : '',
       role_status: roleStatus,
       company_id: p.company_key,
       person_id: String(p.id),
@@ -105,6 +114,7 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
     noUrl: picked.noUrl.map(listed),
     overLimit,
     applyFirst,
+    hookUnread: picked.hookUnread.map(listed),
     people: picked.chosen.map(listed),
   }
   // Refused while any note is over the limit (or missing): nothing is written.

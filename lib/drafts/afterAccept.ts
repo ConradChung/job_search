@@ -1,6 +1,7 @@
 import { PROFILE } from '@/lib/profile'
 import { hasMetric, INTERNAL_NAMES } from './prompt'
 import { contactType } from '@/lib/export/csv'
+import { EXPERIENCE_BANK, fitPhrase } from '@/lib/research/bank'
 
 /**
  * After-accept message (owner, 2026-11-23): a fixed template per track, no model
@@ -69,6 +70,8 @@ export function recruiterBullets(set: BulletSet, note: string | null | undefined
 export function afterAcceptTrack(branch: string, title: string | null = null): Exclude<AfterAcceptTrack, 'fallback'> {
   const type = contactType(branch, title)
   if (type === 'alum') return 'bruin'
+  // Job posters are the hiring team (owner, 2026-11-23): same messages as recruiters.
+  if (branch === 'poster') return 'recruiter'
   if (type === 'recruiter') return 'recruiter'
   if (type === 'founder') return 'founder'
   return 'leader'
@@ -134,6 +137,57 @@ export interface AfterAcceptInput {
   title?: string | null
   /** The company's fit track: 'sdr' (Tier 2) picks the SDR bullets for recruiters. Read from the role title when missing. */
   fitTrack?: string | null
+  /** Company research (hook + fit line). When present with a valid fit line, recruiters get the researched messages. */
+  research?: ResearchForMessage | null
+  /** The person has a work email on file: the LinkedIn message says a note went to their inbox too. */
+  hasEmail?: boolean
+}
+
+export interface ResearchForMessage {
+  hookSentence: string | null
+  hookShort: string | null
+  fitItems: string[]
+}
+
+/** Researched LinkedIn message, max length (owner set none; this keeps it a short DM). */
+export const RESEARCHED_LINKEDIN_MAX = 600
+
+/** Researched recruiter LinkedIn message (owner, 2026-11-23). */
+export function researchedLinkedIn(name: string, role: string, r: ResearchForMessage, hasEmail: boolean): string | null {
+  const fit = fitPhrase(r.fitItems, 'linkedin')
+  if (!fit) return null
+  const inbox = hasEmail ? ' and sent a short note to your inbox too' : ''
+  const middle = r.hookShort ? `${r.hookShort}, and I think my experience in ${fit} lines up well.` : `I think my experience in ${fit} lines up well.`
+  return `Thanks for connecting, ${name}! I applied to the ${role} role${inbox}. ${middle} Thank you for considering me!`
+}
+
+/** Researched recruiter email (owner, 2026-11-23). Subject "Thank you! - {role}". */
+export function researchedEmail(name: string, role: string, company: string, r: ResearchForMessage): { subject: string; body: string } | null {
+  const fit = fitPhrase(r.fitItems, 'email')
+  if (!fit) return null
+  const parts = [
+    `Hi ${name},`,
+    `I hope you're having a great week! I recently applied to the ${role} role at ${company} and wanted to reach out directly to say how excited I am about it.`,
+    ...(r.hookSentence ? [r.hookSentence] : []),
+    `I think the role is a strong fit for my experience in ${fit}.`,
+    'Thank you in advance for your consideration!',
+    'Best,\nConrad',
+  ]
+  return { subject: `Thank you! - ${role}`, body: parts.join('\n\n') }
+}
+
+/** Role and company the recruiter messages use: the note's own wording when it names them. */
+export function messageRoleAndCompany(i: Pick<AfterAcceptInput, 'note' | 'company' | 'roleTitle'>): { role: string | null; company: string | null } {
+  const fromNote = roleFromNote(i.note)
+  return { role: fromNote?.role ?? cleanRoleTitle(i.roleTitle), company: cleanCompany(fromNote?.company ?? i.company) }
+}
+
+/** The email version for recruiters and job posters with research; null otherwise (no email column filled). */
+export function afterAcceptEmail(i: AfterAcceptInput): { subject: string; body: string } | null {
+  if (afterAcceptTrack(i.branch, i.title ?? null) !== 'recruiter' || !i.research) return null
+  const { role, company } = messageRoleAndCompany(i)
+  if (!role || !company) return null
+  return researchedEmail(i.firstName.trim(), role, company, i.research)
 }
 
 /** Role and company as the note named them ("Interested in the X role at Y."), if it did. */
@@ -154,6 +208,11 @@ export function afterAcceptMessage(i: AfterAcceptInput): { text: string; track: 
   // Recruiters (owner, 2026-11-23): says you applied, so it must only go out once the role is marked Applied.
   // Role wording exactly as the note named it; bullets by tier.
   const noteRole = fromNote?.role ?? role
+  if (track === 'recruiter' && noteRole && company && i.research) {
+    const text = researchedLinkedIn(name, noteRole, i.research, !!i.hasEmail)
+    if (text) return { track, text }
+  }
+  // No research yet: the bulleted message.
   if (track === 'recruiter' && noteRole && company) {
     const set: BulletSet = i.fitTrack
       ? i.fitTrack === 'sdr' ? 'sdr' : i.fitTrack === 'revops' ? 'revops' : 'gtm'
@@ -188,7 +247,8 @@ export function afterAcceptProblems(text: string, note = '', company: string | n
   const problems: string[] = []
   const t = text.trim()
   const recruiter = /^Thanks for connecting, [^.]+\. I've applied for the /.test(t) && /\nQuick background:\n/.test(t)
-  const max = recruiter ? RECRUITER_AFTER_ACCEPT_MAX : AFTER_ACCEPT_MAX
+  const researched = /^Thanks for connecting, [^!.]+! I applied to the .+ role( and sent a short note to your inbox too)?\. /.test(t)
+  const max = recruiter ? RECRUITER_AFTER_ACCEPT_MAX : researched ? RESEARCHED_LINKEDIN_MAX : AFTER_ACCEPT_MAX
   if (t.length > max) problems.push(`It is ${t.length} characters; keep it under ${max}.`)
   // Recruiter bullets are the owner's own wording: checked against the approved list, not the note.
   const lines = t.split('\n')
@@ -202,18 +262,26 @@ export function afterAcceptProblems(text: string, note = '', company: string | n
     if (!/\n\nIf it looks like a fit, I'd love to set up a quick call\.$/.test(t)) problems.push('Must end with the quick-call line.')
     if (/write-up|hiring manager/i.test(t)) problems.push('No write-up offer to recruiters.')
   } else if (bulletLines.length) problems.push('Bullets are for recruiter messages only.')
-  const frame = recruiter ? lines.filter((l) => !/^\s*[\u2022\-*]\s/.test(l)).join('\n') : t
-  if (!recruiter) {
+  // Researched messages: the experience-bank wording is the owner's own (it may name Kalshi or Coinbase); the hook is checked at research time.
+  let frame = recruiter ? lines.filter((l) => !/^\s*[\u2022\-*]\s/.test(l)).join('\n') : t
+  if (researched) {
+    for (const item of Object.values(EXPERIENCE_BANK)) frame = frame.split(item.linkedin).join(' ').split(item.email).join(' ')
+    // The hook (between the opening line and ", and I think") is a company fact checked at research time.
+    frame = frame.replace(/(role(?: and sent a short note to your inbox too)?\. ).*?(, and I think my experience)/, '$1$2')
+    if (!/ lines up well\. Thank you for considering me!$/.test(t)) problems.push('Must end with the fit line and "Thank you for considering me!".')
+    if (/write-up|hiring manager/i.test(t)) problems.push('No write-up offer to recruiters.')
+  }
+  if (!recruiter && !researched) {
     const afterGreeting = t.replace(/^Thanks[^.!?]*[.!?]\s*/, '')
     const sentences = afterGreeting.split(/(?<=[.!?])\s+/).filter((s) => s.trim())
     if (sentences.length > 2) problems.push('At most two sentences after the greeting.')
   }
   if (/march 2027|graduat|class of|\bgrad\b/i.test(t)) problems.push('Never mention the graduation date.')
   if (/in scope|in-scope|eligible|qualif(y|ied) for/i.test(t)) problems.push('Never ask whether you are in scope.')
-  if (/\b(audit|teardown|tear-down|free|no[- ]cost|complimentary|our (service|agency)|we can help)\b/i.test(t)) problems.push('Sounds like a vendor pitch; write as a candidate.')
+  if (/\b(audit|teardown|tear-down|free|no[- ]cost|complimentary|our (service|agency)|we can help)\b/i.test(researched ? frame : t)) problems.push('Sounds like a vendor pitch; write as a candidate.')
   const backRef = /\b(beyond the|on top of the|as i (said|mentioned)|i mentioned|the .{0,40} i mentioned|like i said|following up on)\b/i
   if (backRef.test(t)) problems.push('Refers back to something; only what this message says.')
-  for (const word of ['kalshi', 'coinbase', 'outbound work', 'pipelines', 'platform', 'prospecting']) {
+  for (const word of researched ? [] : ['kalshi', 'coinbase', 'outbound work', 'pipelines', 'platform', 'prospecting']) {
     if (frame.toLowerCase().includes(word) && !note.toLowerCase().includes(word)) problems.push(`Mentions "${word}", which the note did not say.`)
   }
   if ((t.match(/\?/g) ?? []).length > 1) problems.push('One ask only.')
@@ -229,4 +297,25 @@ export function afterAcceptProblems(text: string, note = '', company: string | n
 export function withoutCompany(text: string, company: string | null | undefined): string {
   const names = [company, cleanCompany(company)].filter((n): n is string => !!n && n.length > 1)
   return names.reduce((t, n) => t.split(n).join(' '), text)
+}
+
+/** Code checks for the researched email; [] = fine. Bank wording is the owner's own; the hook was checked at research time. */
+export function afterAcceptEmailProblems(e: { subject: string; body: string }, company: string | null = null): string[] {
+  const problems: string[] = []
+  if (!/^Thank you! - \S/.test(e.subject)) problems.push('Subject must be "Thank you! - {role}".')
+  const b = e.body.trim()
+  if (!/^Hi [^,\n]+,\n\nI hope you're having a great week! I recently applied to the .+ role at .+ and wanted to reach out directly to say how excited I am about it\.\n\n/.test(b)) problems.push('Email must open with the template greeting and first paragraph.')
+  if (!/\n\nI think the role is a strong fit for my experience in .+\.\n\nThank you in advance for your consideration!\n\nBest,\nConrad$/.test(b)) problems.push('Email must end with the fit line, the thank-you and the sign-off.')
+  if (b.length > 1200) problems.push(`Email is ${b.length} characters; keep it under 1200.`)
+  let frame = b
+  for (const item of Object.values(EXPERIENCE_BANK)) frame = frame.split(item.email).join(' ')
+  // Six paragraphs = the hook is the third; it was checked at research time.
+  const paras = frame.split('\n\n')
+  if (paras.length === 6) frame = [...paras.slice(0, 2), ...paras.slice(3)].join('\n\n')
+  if (/march 2027|graduat|class of|\bgrad\b/i.test(b)) problems.push('Never mention the graduation date.')
+  if (/write-up|hiring manager|\b(audit|teardown|free|complimentary)\b/i.test(frame)) problems.push('No write-up offer or vendor language.')
+  if (hasMetric(withoutCompany(frame, company)) || /\d/.test(withoutCompany(frame, company))) problems.push('No numbers of any kind (counts, money, rates).')
+  if (INTERNAL_NAMES.test(b)) problems.push('No internal project names.')
+  if (/\u2014/.test(b)) problems.push('No em dashes.')
+  return problems
 }

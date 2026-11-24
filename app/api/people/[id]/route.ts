@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { OUTREACH_VALUES, PERSON_COLUMNS } from '@/lib/people/types'
 import { noteProblems } from '@/lib/drafts/check'
 import { draftWarnings } from '@/lib/drafts/prompt'
+import { hookGateProblem } from '@/lib/research/gate'
 
 const Patch = z
   .object({
@@ -25,6 +26,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (parsed.data.draft) {
     const problems = await noteProblems(db, id, parsed.data.draft)
     if (problems.length) return NextResponse.json({ error: problems.join(' '), problems }, { status: 422 })
+  }
+  // Researched messages: approve only after the owner has read the company's hook.
+  if (parsed.data.outreach_status === 'approved') {
+    const gate = await hookGateProblem(db, id)
+    if (gate) return NextResponse.json({ error: gate, problems: [gate] }, { status: 422 })
   }
   const { data, error } = await db.from('people').update(parsed.data).eq('id', id).select(PERSON_COLUMNS).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

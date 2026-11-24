@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { cleanDraft, draftProblems, systemPrompt, userPrompt, type DraftContext } from './prompt'
-import { afterAcceptMessage, afterAcceptProblems } from './afterAccept'
+import { afterAcceptEmail, afterAcceptEmailProblems, afterAcceptMessage, afterAcceptProblems } from './afterAccept'
 
 export const DRAFT_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6, cacheRead: 0.2 / 1e6, cacheWrite: 5 / 1e6 }
@@ -12,6 +12,8 @@ export interface DraftResult {
   cost: number
   /** Rule problems still present after the retries (empty = clean). */
   problems: string[]
+  /** Researched recruiter email (after-accept only). */
+  email?: { subject: string; body: string } | null
 }
 
 type Usage = {
@@ -85,6 +87,9 @@ export async function generateDraft(client: DraftClient, ctx: DraftContext): Pro
  */
 export async function generateFollowup(client: DraftClient, ctx: DraftContext, note: string): Promise<DraftResult> {
   void client
-  const r = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, fitTrack: ctx.fitTrack, note })
-  return { text: r.text, model: 'template', cost: 0, problems: afterAcceptProblems(r.text, note, ctx.company) }
+  const input = { firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, fitTrack: ctx.fitTrack, research: ctx.research, hasEmail: ctx.hasEmail, note }
+  const r = afterAcceptMessage(input)
+  const email = afterAcceptEmail(input)
+  const problems = [...afterAcceptProblems(r.text, note, ctx.company), ...(email ? afterAcceptEmailProblems(email, ctx.company).map((p) => `email: ${p}`) : [])]
+  return { text: r.text, model: 'template', cost: 0, problems, email }
 }

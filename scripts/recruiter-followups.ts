@@ -10,10 +10,10 @@ async function main() {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
   const write = process.argv.includes('--yes')
   // --leaders also rewrites sales leaders and founders (same template file, line break after the greeting).
-  const branches = process.argv.includes('--leaders') ? ['recruiting', 'gtm_leadership', 'executive'] : ['recruiting']
+  const branches = process.argv.includes('--leaders') ? ['recruiting', 'poster', 'gtm_leadership', 'executive'] : ['recruiting', 'poster']
   const r = await refreshRecruiterFollowups(db, { write, branches })
   for (const c of r.changes) {
-    console.log(`\n[${c.company}] ${c.full_name} (${c.branch}, ${c.status})${c.problems.length ? ` PROBLEMS: ${c.problems.join(' ')}` : ''}\n  NOTE:  ${c.note}\n  OLD:   ${c.before}\n  NEW:   ${c.after}`)
+    console.log(`\n[${c.company}] ${c.full_name} (${c.branch}, ${c.status})${c.problems.length ? ` PROBLEMS: ${c.problems.join(' ')}` : ''}\n  NOTE:  ${c.note}\n  OLD:   ${c.before}\n  NEW:   ${c.after}${c.email ? `\n  EMAIL: ${c.email.subject}\n${c.email.body}` : ''}`)
   }
   console.log(`\n${r.changes.length} of ${r.total} recruiter messages ${write ? 'rewritten' : 'would change (preview; --yes to write)'}. Skipped:`, r.skipped)
 }

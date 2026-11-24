@@ -40,6 +40,8 @@ async function main() {
   console.log(`${r.count} people (first ${r.count} of ${r.available} ready)`)
   for (const p of r.people) console.log(`  ${p.company} / ${p.name}`)
   if (r.noUrl.length) console.log(`Skipped, no profile URL: ${r.noUrl.map((p) => `${p.name} (${p.company})`).join(', ')}`)
+  if (r.hookUnread.length)
+    console.log(`Hook not read yet, held out until you tick "I've read this" on the company row: ${r.hookUnread.map((p) => `${p.name} (${p.company})`).join(', ')}`)
   if (r.applyFirst.length)
     console.log(`Apply first, held out of the file until the role is marked Applied: ${r.applyFirst.map((p) => `${p.name} (${p.company})`).join(', ')}`)
   if (r.overLimit.length) {
