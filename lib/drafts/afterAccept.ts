@@ -143,7 +143,7 @@ export function afterAcceptMessage(i: AfterAcceptInput): { text: string; track: 
     const bullets = recruiterBullets(isSdr, i.note).map((b) => `\u2022 ${b}`).join('\n')
     return {
       track,
-      text: `Thanks for connecting, ${name}. I've applied for the ${noteRole} role at ${company}.\n\nQuick background:\n${bullets}\n\nIf that looks like a fit, I'd welcome a quick screen.`,
+      text: `Thanks for connecting, ${name}. I've applied for the ${noteRole} role at ${company}.\n\nQuick background:\n${bullets}\n\nIf it looks like a fit, I'd love to set up a quick call.`,
     }
   }
   if ((track === 'leader' || track === 'founder') && role && company) {
@@ -178,7 +178,7 @@ export function afterAcceptProblems(text: string, note = '', company: string | n
   if (recruiter) {
     if (bulletLines.length !== 3) problems.push('Exactly three bullets.')
     for (const b of bulletLines) if (!ALL_BULLETS.includes(b)) problems.push(`Bullet not on the approved list: "${b}"`)
-    if (!/\n\nIf that looks like a fit, I'd welcome a quick screen\.$/.test(t)) problems.push('Must end with the quick-screen line.')
+    if (!/\n\nIf it looks like a fit, I'd love to set up a quick call\.$/.test(t)) problems.push('Must end with the quick-call line.')
     if (/write-up|hiring manager/i.test(t)) problems.push('No write-up offer to recruiters.')
   } else if (bulletLines.length) problems.push('Bullets are for recruiter messages only.')
   const frame = recruiter ? lines.filter((l) => !/^\s*[\u2022\-*]\s/.test(l)).join('\n') : t

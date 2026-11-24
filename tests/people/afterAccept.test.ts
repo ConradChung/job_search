@@ -15,14 +15,14 @@ describe('persona → template (owner, 2026-11-23)', () => {
     expect(afterAcceptTrack('executive', 'Chief Revenue Officer (CRO)')).toBe('leader')
     expect(afterAcceptTrack('executive', 'Co-founder and CEO')).toBe('founder')
   })
-  it("recruiter (Tier 1/3): the note's role wording, GTM bullets, quick-screen close", () => {
+  it("recruiter (Tier 1/3): the note's role wording, GTM bullets, quick-call close", () => {
     const r = afterAcceptMessage({ firstName: 'Renee', branch: 'recruiting', title: 'Recruiter', company: 'Engine', roleTitle: 'GTM Engineer', fitTrack: 'gtm_eng', note: recNote })
     expect(r.text).toBe(
       "Thanks for connecting, Renee. I've applied for the Software Engineer - GTM Engineering role at Engine.\n\nQuick background:\n" +
         "• GTM Engineering Head at ZenPort AI, where I'm the only GTM hire\n" +
         '• Built the outbound engine end to end: signals, enrichment, scoring, routing, sequencing\n' +
         '• Stack: Clay, Apify, Exa, Supabase, Instantly, Claude Code\n\n' +
-        "If that looks like a fit, I'd welcome a quick screen."
+        "If it looks like a fit, I'd love to set up a quick call."
     )
     expect(r.text).not.toMatch(/write-up|hiring manager/)
   })
@@ -97,7 +97,7 @@ describe('after-accept code checks', () => {
   it('recruiter messages: only approved bullets, no write-up offer, no numbers outside the bullets', () => {
     const t = afterAcceptMessage({ firstName: 'Renee', branch: 'recruiting', company: 'Engine', roleTitle: null, fitTrack: 'gtm_eng', note: recNote }).text
     expect(afterAcceptProblems(t.replace('Stack: Clay', 'Booked 40 meetings with Clay'), recNote, 'Engine').join()).toMatch(/approved list/)
-    expect(afterAcceptProblems(t.replace('quick screen.', 'quick screen. Happy to send a write-up for the hiring manager.'), recNote, 'Engine').join()).toMatch(/write-up/)
+    expect(afterAcceptProblems(t.replace('quick call.', 'quick call. Happy to send a write-up for the hiring manager.'), recNote, 'Engine').join()).toMatch(/write-up/)
     expect(afterAcceptProblems(t.replace('Quick background', 'Booked 40 meetings. Quick background'), recNote, 'Engine').join()).toMatch(/numbers/)
     expect(afterAcceptProblems(`${t}\n${'x'.repeat(450)}`, recNote, 'Engine').join()).toMatch(/under 450/)
   })
