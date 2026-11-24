@@ -136,8 +136,12 @@ export async function writeCompany(db: SupabaseClient, client: Anthropic, compan
   const list = (row.hook_candidates ?? []) as HookCandidate[]
   const w = await writeWording(client, { company: ri.input.company, roleTitle: ri.input.roleTitle, posting: ri.input.posting, fitItems: row.fit_items as string[] }, list)
   const candidates = list.map((c, i) => {
-    const { li_hook: _a, li_link: _b, li_item: _c, email_hook: _d, ...base } = c
-    void _a, void _b, void _c, void _d
+    // Old wording never survives a rewrite: a candidate that now fails keeps none.
+    const base: HookCandidate = { ...c }
+    delete base.li_hook
+    delete base.li_link
+    delete base.li_item
+    delete base.email_hook
     return { ...base, ...(w.perCandidate[i] ?? {}) } as HookCandidate
   })
   // Only the owner's own "no hook" stays empty; an empty pick left by failed wording is re-picked.

@@ -1,7 +1,6 @@
 import { PROFILE } from '@/lib/profile'
 import { hasMetric, INTERNAL_NAMES } from './prompt'
 import { contactType } from '@/lib/export/csv'
-import { EXPERIENCE_BANK, fitPhrase } from '@/lib/research/bank'
 
 /**
  * After-accept message (owner, 2026-11-23): a fixed template per track, no model
