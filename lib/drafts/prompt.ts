@@ -21,6 +21,8 @@ export interface DraftContext {
   sdrLeader?: boolean
   /** Status of the role in the tracker (recruiter after-accept message depends on it). */
   roleStatus?: string | null
+  /** The company's fit track (gtm_eng, sdr, revops): picks the recruiter after-accept bullets. */
+  fitTrack?: string | null
   /** Notes already drafted for other people at this company (must not be reused). */
   siblings: string[]
   limit: number

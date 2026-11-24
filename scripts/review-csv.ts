@@ -14,7 +14,7 @@ import { applyFilters, CLEARED } from '../lib/pipeline/filters'
 import { tierOf, type FitTrack } from '../lib/jobs/fit'
 import { PROFILE } from '../lib/profile'
 import { EXPORT_COLUMNS, type ExportRow } from '../lib/export/columns'
-import { contactType, csvField, normalizeLinkedIn, oneLine, splitName } from '../lib/export/csv'
+import { contactType, csvField, exportCell, normalizeLinkedIn, oneLine, splitName } from '../lib/export/csv'
 import { draftWarnings, shortRole } from '../lib/drafts/prompt'
 import { noteProblems } from '../lib/drafts/check'
 
@@ -55,7 +55,7 @@ async function main() {
       company_id: c.key,
       person_id: String(p.id),
     }
-    lines.push([...EXPORT_COLUMNS.map((col) => csvField(oneLine(row[col.key]))), csvField(oneLine(checks))].join(','))
+    lines.push([...EXPORT_COLUMNS.map((col) => exportCell(col.key, row[col.key])), csvField(oneLine(checks))].join(','))
   }
   const path = join(opt('out', join(homedir(), 'Downloads')), `tier${tier}-${status}-review-${new Date().toISOString().slice(0, 10)}-${people.length}.csv`)
   writeFileSync(path, lines.join('\r\n') + '\r\n', 'utf8')

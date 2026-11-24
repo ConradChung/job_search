@@ -4,6 +4,7 @@ import { afterAcceptMessage, afterAcceptProblems } from './afterAccept'
 
 export interface FollowupChange {
   id: number
+  branch: string
   company: string
   full_name: string
   status: string
@@ -18,11 +19,11 @@ export interface FollowupChange {
  * No model call, no cost. Drafted / Approved only; the note is never changed.
  * Runs on demand and whenever a role's status changes (applied wording).
  */
-export async function refreshRecruiterFollowups(db: SupabaseClient, opts: { companyKey?: string; write: boolean }) {
+export async function refreshRecruiterFollowups(db: SupabaseClient, opts: { companyKey?: string; write: boolean; branches?: string[] }) {
   let q = db
     .from('people')
-    .select('id, company, full_name, outreach_status, draft, followup')
-    .eq('branch', 'recruiting')
+    .select('id, company, full_name, branch, outreach_status, draft, followup')
+    .in('branch', opts.branches ?? ['recruiting'])
     .in('outreach_status', ['drafted', 'approved'])
     .not('draft', 'is', null)
     .order('company_key')
@@ -44,10 +45,10 @@ export async function refreshRecruiterFollowups(db: SupabaseClient, opts: { comp
     }
     if (!loaded) continue
     const { ctx } = loaded
-    const after = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, note: p.draft }).text
+    const after = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, fitTrack: ctx.fitTrack, note: p.draft }).text
     if (after === p.followup) continue
     const problems = afterAcceptProblems(after, p.draft, ctx.company)
-    changes.push({ id: p.id, company: p.company, full_name: p.full_name, status: p.outreach_status, note: p.draft, before: p.followup, after, problems })
+    changes.push({ id: p.id, branch: p.branch, company: p.company, full_name: p.full_name, status: p.outreach_status, note: p.draft, before: p.followup, after, problems })
     if (opts.write && !problems.length) {
       const { error: e } = await db.from('people').update({ followup: after }).eq('id', p.id)
       if (e) throw new Error(`save follow-up: ${e.message}`)

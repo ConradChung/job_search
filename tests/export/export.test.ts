@@ -27,13 +27,22 @@ describe('CSV quoting', () => {
     expect(csvField('two\nlines')).toBe('"two\nlines"')
     expect(csvField(' edge')).toBe('" edge"')
   })
-  it('one line per row: line breaks inside a note become spaces', () => {
+  it('notes stay one line; only the after-accept message keeps line breaks', () => {
     expect(oneLine('Hi Ann,\r\nI build\nthings. Open?')).toBe('Hi Ann, I build things. Open?')
     const csv = toCsv([row({ note: 'Hi Ann,\nI "build" things, really.', after_accept_message: 'Thanks\r\nagain' })])
     const lines = csv.trimEnd().split('\r\n')
     expect(lines).toHaveLength(2)
     expect(lines[1]).toContain('"Hi Ann, I ""build"" things, really."')
-    expect(lines[1]).toContain(',Thanks again,')
+    // The after-accept message keeps its line breaks (as \n), quoted so they survive.
+    expect(lines[1]).toContain(',"Thanks\nagain",')
+  })
+  it('a multi-line after-accept message round-trips through the parser', () => {
+    const msg = 'Thanks, Ann.\n\nQuick background:\n• One, "two"\n• Three'
+    const csv = toCsv([row({ after_accept_message: msg })])
+    expect(csv).toContain('"Thanks, Ann.\n\nQuick background:\n• One, ""two""\n• Three"')
+    const parsed = parseCsv(csv)
+    expect(parsed).toHaveLength(2)
+    expect(parsed[1][EXPORT_COLUMNS.findIndex((c) => c.key === 'after_accept_message')]).toBe(msg)
   })
   it('header follows the column config, linkedin_url first; round-trips through the parser', () => {
     const csv = toCsv([row({ company: 'Ünïcode, Inc.', note: 'Comma, "quote"' })])

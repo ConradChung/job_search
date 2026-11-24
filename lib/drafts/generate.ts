@@ -85,6 +85,6 @@ export async function generateDraft(client: DraftClient, ctx: DraftContext): Pro
  */
 export async function generateFollowup(client: DraftClient, ctx: DraftContext, note: string): Promise<DraftResult> {
   void client
-  const r = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, note })
+  const r = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, fitTrack: ctx.fitTrack, note })
   return { text: r.text, model: 'template', cost: 0, problems: afterAcceptProblems(r.text, note, ctx.company) }
 }

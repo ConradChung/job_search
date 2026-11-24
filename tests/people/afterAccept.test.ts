@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { afterAcceptMessage, afterAcceptProblems, afterAcceptTrack, cleanCompany, cleanRoleTitle, isOutboundRole, roleFromNote, AFTER_ACCEPT_MAX } from '@/lib/drafts/afterAccept'
+import { afterAcceptMessage, afterAcceptProblems, afterAcceptTrack, cleanCompany, cleanRoleTitle, isOutboundRole, roleFromNote, AFTER_ACCEPT_MAX, RECRUITER_AFTER_ACCEPT_MAX, RECRUITER_BULLETS } from '@/lib/drafts/afterAccept'
 import { companyFit } from '@/lib/jobs/fit'
 import { pickForExport, type ExportCandidate } from '@/lib/export/csv'
 
@@ -15,28 +15,44 @@ describe('persona → template (owner, 2026-11-23)', () => {
     expect(afterAcceptTrack('executive', 'Chief Revenue Officer (CRO)')).toBe('leader')
     expect(afterAcceptTrack('executive', 'Co-founder and CEO')).toBe('founder')
   })
-  it('recruiter: says you applied, offers the write-up for the hiring manager', () => {
-    const r = afterAcceptMessage({ firstName: 'Renee', branch: 'recruiting', title: 'Recruiter', company: 'Engine', roleTitle: null, note: recNote })
+  it("recruiter (Tier 1/3): the note's role wording, GTM bullets, quick-screen close", () => {
+    const r = afterAcceptMessage({ firstName: 'Renee', branch: 'recruiting', title: 'Recruiter', company: 'Engine', roleTitle: 'GTM Engineer', fitTrack: 'gtm_eng', note: recNote })
     expect(r.text).toBe(
-      "Thanks for connecting, Renee. I've applied for the GTM Engineer role at Engine. Happy to send a short write-up of how I'd approach outbound in that seat, if it's useful to pass along to the hiring manager."
+      "Thanks for connecting, Renee. I've applied for the Software Engineer - GTM Engineering role at Engine.\n\nQuick background:\n" +
+        "• GTM Engineering Head at ZenPort AI, where I'm the only GTM hire\n" +
+        '• Built the outbound engine end to end: signals, enrichment, scoring, routing, sequencing\n' +
+        '• Stack: Clay, Apify, Exa, Supabase, Instantly, Claude Code\n\n' +
+        "If that looks like a fit, I'd welcome a quick screen."
     )
+    expect(r.text).not.toMatch(/write-up|hiring manager/)
+  })
+  it('recruiter (Tier 2): SDR bullets; the events bullet replaces Kalshi when the note already says Kalshi', () => {
+    const plain = "Hi Jo, I'm Conrad at UCLA, graduating March 2027. I run outbound for a startup. Interested in the SDR role at Vanta. Open to connecting?"
+    const kalshi = "Hi Jo, I'm Conrad at UCLA, graduating March 2027. I sourced and closed a Kalshi partnership. Interested in the SDR role at Vanta. Open to connecting?"
+    const a = afterAcceptMessage({ firstName: 'Jo', branch: 'recruiting', company: 'Vanta', roleTitle: 'SDR', fitTrack: 'sdr', note: plain }).text
+    expect(a).toContain(`• ${RECRUITER_BULLETS.sdr[0]}\n• ${RECRUITER_BULLETS.sdr[1]}\n• ${RECRUITER_BULLETS.sdr[2]}`)
+    const b = afterAcceptMessage({ firstName: 'Jo', branch: 'recruiting', company: 'Vanta', roleTitle: 'SDR', fitTrack: 'sdr', note: kalshi }).text
+    expect(b).toContain(`• ${RECRUITER_BULLETS.sdrFallback}\n• ${RECRUITER_BULLETS.sdr[1]}`)
+    expect(b).not.toMatch(/kalshi/i)
+    for (const [t, n] of [[a, plain], [b, kalshi]]) {
+      expect(t.length).toBeLessThanOrEqual(RECRUITER_AFTER_ACCEPT_MAX)
+      expect(afterAcceptProblems(t, n, 'Vanta')).toEqual([])
+    }
   })
   it('leaders and founders: the write-up message; Bruin: the 15-minute ask with the UCLA line', () => {
     const note = "Hi Mark, I'm Conrad at UCLA, graduating March 2027. I do the prospecting for two startups I co-founded. Interested in the SDR role at Hauler Hero. Open to connecting?"
     for (const [branch, title] of [['gtm_leadership', 'VP Sales'], ['executive', 'CEO']]) {
       const t = afterAcceptMessage({ firstName: 'Mark', branch, title, company: 'Hauler Hero Inc.', roleTitle: 'SDR', note }).text
-      expect(t).toMatch(/^Thanks for connecting, Mark\. I've (been thinking about how I'd approach outbound to|been sketching how I'd run outbound to) Hauler Hero's ICP (in|from) the SDR seat\. Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier\.$/)
+      expect(t).toMatch(/^Thanks for connecting, Mark\.\nI've (been thinking about how I'd approach outbound to|been sketching how I'd run outbound to) Hauler Hero's ICP (in|from) the SDR seat\. Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier\.$/)
     }
     const b = afterAcceptMessage({ firstName: 'Erika', branch: 'alumni', company: 'Engine', roleTitle: null, note: alumNote }).text
     expect(b).toMatch(/^Thanks, Erika! (Would 15 minutes next week work\?|Could we find 15 minutes next week\?) I'd love to hear how you ended up at Engine after UCLA\.$/)
   })
-  it('only says "outbound" for outbound roles', () => {
-    const rec = (role: string) => afterAcceptMessage({ firstName: 'Sean', branch: 'recruiting', company: 'demandDrive', roleTitle: role }).text
-    expect(rec('RevOps Engineer')).toBe(
-      "Thanks for connecting, Sean. I've applied for the RevOps Engineer role at demandDrive. Happy to send a short write-up of how I'd approach that seat, if it's useful to pass along to the hiring manager."
-    )
+  it('only says "outbound" for outbound roles (leaders and founders); recruiters get bullets either way', () => {
+    const rec = afterAcceptMessage({ firstName: 'Sean', branch: 'recruiting', company: 'demandDrive', roleTitle: 'RevOps Engineer', fitTrack: 'revops' }).text
+    expect(rec).toContain("I've applied for the RevOps Engineer role at demandDrive.\n\nQuick background:\n• GTM Engineering Head")
     const lead = afterAcceptMessage({ firstName: 'Ann', branch: 'gtm_leadership', title: 'VP Sales', company: 'Acme', roleTitle: 'GTM Systems Engineer' }).text
-    expect(lead).toBe("Thanks for connecting, Ann. I've been thinking about how I'd approach the GTM Systems Engineer seat at Acme. Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier.")
+    expect(lead).toBe("Thanks for connecting, Ann.\nI've been thinking about how I'd approach the GTM Systems Engineer seat at Acme. Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier.")
     for (const r of ['GTM Engineer', 'AI GTM Engineer', 'Founding GTM Engineer', 'SDR', 'BDR', 'Early Stage SDR', 'GTM Automation Engineer']) expect(isOutboundRole(r)).toBe(true)
     for (const r of ['GTM Systems Engineer', 'GTM Analytics Engineer', 'GTM Operations Engineer', 'RevOps Engineer', 'GTM Systems Manager', 'Growth Engineer', 'Software Engineer']) expect(isOutboundRole(r)).toBe(false)
   })
@@ -73,9 +89,17 @@ describe('after-accept code checks', () => {
       afterAcceptMessage({ firstName: 'Justin', branch: 'recruiting', company: '11x', roleTitle: 'Growth Engineer' }).text,
     ]
     for (const t of outs) {
-      expect(t.length).toBeLessThan(AFTER_ACCEPT_MAX)
+      expect(t.length).toBeLessThan(RECRUITER_AFTER_ACCEPT_MAX)
       expect(afterAcceptProblems(t, recNote, '11x')).toEqual([])
     }
+    expect(outs[1].length).toBeLessThan(AFTER_ACCEPT_MAX)
+  })
+  it('recruiter messages: only approved bullets, no write-up offer, no numbers outside the bullets', () => {
+    const t = afterAcceptMessage({ firstName: 'Renee', branch: 'recruiting', company: 'Engine', roleTitle: null, fitTrack: 'gtm_eng', note: recNote }).text
+    expect(afterAcceptProblems(t.replace('Stack: Clay', 'Booked 40 meetings with Clay'), recNote, 'Engine').join()).toMatch(/approved list/)
+    expect(afterAcceptProblems(t.replace('quick screen.', 'quick screen. Happy to send a write-up for the hiring manager.'), recNote, 'Engine').join()).toMatch(/write-up/)
+    expect(afterAcceptProblems(t.replace('Quick background', 'Booked 40 meetings. Quick background'), recNote, 'Engine').join()).toMatch(/numbers/)
+    expect(afterAcceptProblems(`${t}\n${'x'.repeat(450)}`, recNote, 'Engine').join()).toMatch(/under 450/)
   })
   it('rejects the old failure modes', () => {
     expect(afterAcceptProblems('Thanks for connecting, Ann. Is a March 2027 grad in scope for the GTM Engineer role?').join()).toMatch(/graduation date.*in scope|in scope/)

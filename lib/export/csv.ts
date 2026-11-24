@@ -12,10 +12,22 @@ export function csvField(v: string): string {
   return /[",\r\n]|^\s|\s$/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
 
-/** CSV text (UTF-8, CRLF line endings), header row from the column config. */
+/** Fields whose line breaks are part of the message (kept, quoted); every other field is one line. */
+export const MULTILINE_COLUMNS: ReadonlySet<string> = new Set(['after_accept_message'])
+
+/** Line breaks kept as \n (the row separator stays CRLF); the field is quoted by csvField. */
+export function keepLines(v: string | null | undefined): string {
+  return (v ?? '').replace(/\r\n|\r|\u2028|\u2029/g, '\n').replace(/[ \t]+\n/g, '\n').trim()
+}
+
+export function exportCell(key: string, v: string | null | undefined): string {
+  return csvField(MULTILINE_COLUMNS.has(key) ? keepLines(v) : oneLine(v))
+}
+
+/** CSV text (UTF-8, CRLF row endings), header row from the column config. Multi-line messages are quoted. */
 export function toCsv(rows: ExportRow[]): string {
   const lines = [EXPORT_COLUMNS.map((c) => csvField(c.header)).join(',')]
-  for (const r of rows) lines.push(EXPORT_COLUMNS.map((c) => csvField(oneLine(r[c.key]))).join(','))
+  for (const r of rows) lines.push(EXPORT_COLUMNS.map((c) => exportCell(c.key, r[c.key])).join(','))
   return lines.join('\r\n') + '\r\n'
 }
 

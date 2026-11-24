@@ -21,6 +21,34 @@ import { contactType } from '@/lib/export/csv'
 export type AfterAcceptTrack = 'bruin' | 'recruiter' | 'leader' | 'founder' | 'fallback'
 
 export const AFTER_ACCEPT_MAX = 300
+/** Recruiter message (owner, 2026-11-23): greeting, three bullets, close. */
+export const RECRUITER_AFTER_ACCEPT_MAX = 450
+
+/** Recruiter bullets, word for word as the owner wrote them (2026-11-23). */
+export const RECRUITER_BULLETS = {
+  /** Tier 1 (GTM Engineer) and Tier 3 (RevOps / systems). */
+  gtm: [
+    "GTM Engineering Head at ZenPort AI, where I'm the only GTM hire",
+    'Built the outbound engine end to end: signals, enrichment, scoring, routing, sequencing',
+    'Stack: Clay, Apify, Exa, Supabase, Instantly, Claude Code',
+  ],
+  /** Tier 2 (SDR / BDR). */
+  sdr: [
+    "Sourced and closed Blockchain @ UCLA's partnership with Kalshi, negotiating with its head of growth",
+    'Cold outreach to Coinbase recruiters that turned into on-campus recruiting initiatives',
+    'Run outbound end to end as the only GTM hire at ZenPort AI',
+  ],
+  /** Replaces the Kalshi bullet when the person's note already mentions Kalshi. */
+  sdrFallback: 'Hosted ten events with a16z, Uniswap, Deloitte and others as Head of Growth and Partnerships',
+} as const
+const ALL_BULLETS: string[] = [...RECRUITER_BULLETS.gtm, ...RECRUITER_BULLETS.sdr, RECRUITER_BULLETS.sdrFallback]
+
+/** Tier 2 bullets for SDR / BDR roles, Tier 1/3 bullets otherwise. */
+export function recruiterBullets(isSdr: boolean, note: string | null | undefined): string[] {
+  if (!isSdr) return [...RECRUITER_BULLETS.gtm]
+  const [kalshi, ...rest] = RECRUITER_BULLETS.sdr
+  return [/kalshi/i.test(note ?? '') ? RECRUITER_BULLETS.sdrFallback : kalshi, ...rest]
+}
 
 export function afterAcceptTrack(branch: string, title: string | null = null): Exclude<AfterAcceptTrack, 'fallback'> {
   const type = contactType(branch, title)
@@ -88,6 +116,8 @@ export interface AfterAcceptInput {
   note?: string | null
   /** Their job title (tells a CRO, a sales leader, from a founder). */
   title?: string | null
+  /** The company's fit track: 'sdr' (Tier 2) picks the SDR bullets for recruiters. Read from the role title when missing. */
+  fitTrack?: string | null
 }
 
 /** Role and company as the note named them ("Interested in the X role at Y."), if it did. */
@@ -106,11 +136,14 @@ export function afterAcceptMessage(i: AfterAcceptInput): { text: string; track: 
   const track = afterAcceptTrack(i.branch, i.title ?? null)
 
   // Recruiters (owner, 2026-11-23): says you applied, so it must only go out once the role is marked Applied.
-  if (track === 'recruiter' && role && company) {
-    const approach = isOutboundRole(role) ? 'how I\'d approach outbound in that seat' : 'how I\'d approach that seat'
+  // Role wording exactly as the note named it; bullets by tier.
+  const noteRole = fromNote?.role ?? role
+  if (track === 'recruiter' && noteRole && company) {
+    const isSdr = i.fitTrack ? i.fitTrack === 'sdr' : /\b(sdr|bdr|sales development|business development)\b/i.test(noteRole)
+    const bullets = recruiterBullets(isSdr, i.note).map((b) => `\u2022 ${b}`).join('\n')
     return {
       track,
-      text: `Thanks for connecting, ${name}. I've applied for the ${role} role at ${company}. Happy to send a short write-up of ${approach}, if it's useful to pass along to the hiring manager.`,
+      text: `Thanks for connecting, ${name}. I've applied for the ${noteRole} role at ${company}.\n\nQuick background:\n${bullets}\n\nIf that looks like a fit, I'd welcome a quick screen.`,
     }
   }
   if ((track === 'leader' || track === 'founder') && role && company) {
@@ -119,7 +152,7 @@ export function afterAcceptMessage(i: AfterAcceptInput): { text: string; track: 
       : v
         ? `I've been thinking about how I'd approach outbound to ${possessive(company)} ICP in the ${role} seat.`
         : `I've been sketching how I'd run outbound to ${possessive(company)} ICP from the ${role} seat.`
-    return { track, text: `Thanks for connecting, ${name}. ${opener} Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier.` }
+    return { track, text: `Thanks for connecting, ${name}.\n${opener} Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier.` }
   }
   if (track === 'bruin' && company) {
     const ask = v ? 'Would 15 minutes next week work?' : 'Could we find 15 minutes next week?'
@@ -136,23 +169,37 @@ export function afterAcceptMessage(i: AfterAcceptInput): { text: string; track: 
 export function afterAcceptProblems(text: string, note = '', company: string | null = null): string[] {
   const problems: string[] = []
   const t = text.trim()
-  if (t.length > AFTER_ACCEPT_MAX) problems.push(`It is ${t.length} characters; keep it under ${AFTER_ACCEPT_MAX}.`)
-  const afterGreeting = t.replace(/^Thanks[^.!?]*[.!?]\s*/, '')
-  const sentences = afterGreeting.split(/(?<=[.!?])\s+/).filter((s) => s.trim())
-  if (sentences.length > 2) problems.push('At most two sentences after the greeting.')
+  const recruiter = /^Thanks for connecting, [^.]+\. I've applied for the /.test(t) && /\nQuick background:\n/.test(t)
+  const max = recruiter ? RECRUITER_AFTER_ACCEPT_MAX : AFTER_ACCEPT_MAX
+  if (t.length > max) problems.push(`It is ${t.length} characters; keep it under ${max}.`)
+  // Recruiter bullets are the owner's own wording: checked against the approved list, not the note.
+  const lines = t.split('\n')
+  const bulletLines = lines.filter((l) => /^\s*[\u2022\-*]\s/.test(l)).map((l) => l.replace(/^\s*[\u2022\-*]\s+/, '').trim())
+  if (recruiter) {
+    if (bulletLines.length !== 3) problems.push('Exactly three bullets.')
+    for (const b of bulletLines) if (!ALL_BULLETS.includes(b)) problems.push(`Bullet not on the approved list: "${b}"`)
+    if (!/\n\nIf that looks like a fit, I'd welcome a quick screen\.$/.test(t)) problems.push('Must end with the quick-screen line.')
+    if (/write-up|hiring manager/i.test(t)) problems.push('No write-up offer to recruiters.')
+  } else if (bulletLines.length) problems.push('Bullets are for recruiter messages only.')
+  const frame = recruiter ? lines.filter((l) => !/^\s*[\u2022\-*]\s/.test(l)).join('\n') : t
+  if (!recruiter) {
+    const afterGreeting = t.replace(/^Thanks[^.!?]*[.!?]\s*/, '')
+    const sentences = afterGreeting.split(/(?<=[.!?])\s+/).filter((s) => s.trim())
+    if (sentences.length > 2) problems.push('At most two sentences after the greeting.')
+  }
   if (/march 2027|graduat|class of|\bgrad\b/i.test(t)) problems.push('Never mention the graduation date.')
   if (/in scope|in-scope|eligible|qualif(y|ied) for/i.test(t)) problems.push('Never ask whether you are in scope.')
   if (/\b(audit|teardown|tear-down|free|no[- ]cost|complimentary|our (service|agency)|we can help)\b/i.test(t)) problems.push('Sounds like a vendor pitch; write as a candidate.')
   const backRef = /\b(beyond the|on top of the|as i (said|mentioned)|i mentioned|the .{0,40} i mentioned|like i said|following up on)\b/i
   if (backRef.test(t)) problems.push('Refers back to something; only what this message says.')
   for (const word of ['kalshi', 'coinbase', 'outbound work', 'pipelines', 'platform', 'prospecting']) {
-    if (t.toLowerCase().includes(word) && !note.toLowerCase().includes(word)) problems.push(`Mentions "${word}", which the note did not say.`)
+    if (frame.toLowerCase().includes(word) && !note.toLowerCase().includes(word)) problems.push(`Mentions "${word}", which the note did not say.`)
   }
   if ((t.match(/\?/g) ?? []).length > 1) problems.push('One ask only.')
-  // A company name like "11x" is not a number.
-  if (hasMetric(withoutCompany(t, company))) problems.push('No numbers of any kind (counts, money, rates).')
+  // A company name like "11x" is not a number. Approved bullets are checked above, not here.
+  if (hasMetric(withoutCompany(frame, company))) problems.push('No numbers of any kind (counts, money, rates).')
   if (INTERNAL_NAMES.test(t)) problems.push('No internal project names.')
-  if (/—/.test(t)) problems.push('No em dashes.')
+  if (/\u2014/.test(t)) problems.push('No em dashes.')
   void PROFILE
   return problems
 }
