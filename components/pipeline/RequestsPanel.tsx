@@ -95,7 +95,7 @@ export function RequestsPanel({ actions, busy, run, onChanged }: { actions: Pend
                   {Number(a.est_cost_usd) > 0 ? `about $${Number(a.est_cost_usd).toFixed(2)} · ` : 'no cost · '}
                   {list.slice(0, 8).join(', ')}
                   {list.length > 8 ? ` +${list.length - 8}` : ''}
-                  {a.kind === 'export_csv' && Number(a.preview.recruiter_not_applied) > 0 ? ` · ${a.preview.recruiter_not_applied} recruiter rows for roles not Applied` : ''}
+                  {a.kind === 'export_csv' && Number(a.preview.apply_first) > 0 ? ` · ${a.preview.apply_first} recruiter rows held until the role is Applied` : ''}
                 </div>
               </div>
               <Button variant="ghost" size="sm" onClick={() => reject(a)} disabled={!!working || busy}>

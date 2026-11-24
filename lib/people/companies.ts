@@ -97,14 +97,14 @@ export interface CompanyView {
 }
 
 /** Group job rows into companies and attach people, fit and search history. */
-export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: RunSummary[], overrides: Set<string> = new Set()): CompanyView[] {
+export function buildCompanies(jobs: CompanyJob[], people: PersonRow[], runs: RunSummary[], overrides: Set<string> = new Set(), holds: Map<string, string> = new Map()): CompanyView[] {
   const groups = new Map<string, CompanyJob[]>()
   for (const j of jobs) groups.set(j.company_key, [...(groups.get(j.company_key) ?? []), j])
 
   const out = new Map<string, CompanyView>()
   for (const [key, roles] of groups) {
     const first = <K extends keyof CompanyJob>(k: K) => roles.find((r) => r[k] != null)?.[k] ?? null
-    const fit = companyFit(roles, overrides.has(key))
+    const fit = companyFit(roles, overrides.has(key), undefined, holds.get(key) ?? null)
     const band = sizeBand(first('company_employees') as number | null, first('company_size') as string | null)
     const track = trackOf(fit.primary?.category)
     const tiers = roles.map((r) => r.fit_tier).filter((t): t is number => t != null)

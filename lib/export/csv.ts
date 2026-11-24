@@ -91,6 +91,8 @@ export interface ExportCandidate {
   url: string | null
   name: string
   company: string
+  /** Recruiter whose role isn't marked Applied: their message says "I've applied", so they wait ("apply first"). */
+  applyFirst?: boolean
 }
 
 /**
@@ -104,7 +106,8 @@ export function pickForExport(cands: ExportCandidate[], opts: { tiers: number[];
     .filter((c) => opts.tiers.includes(c.tier))
     .sort((a, b) => a.tier - b.tier || a.order - b.order)
   const noUrl = eligible.filter((c) => !normalizeLinkedIn(c.url))
-  const withUrl = eligible.filter((c) => normalizeLinkedIn(c.url))
+  const applyFirst = eligible.filter((c) => normalizeLinkedIn(c.url) && c.applyFirst)
+  const withUrl = eligible.filter((c) => normalizeLinkedIn(c.url) && !c.applyFirst)
   const chosen = opts.limit ? withUrl.slice(0, opts.limit) : withUrl
-  return { chosen, noUrl, available: withUrl.length }
+  return { chosen, noUrl, applyFirst, available: withUrl.length }
 }

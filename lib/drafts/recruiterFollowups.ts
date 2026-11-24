@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { DraftSkipped, draftContext } from './run'
-import { followupProblems, recruiterFollowup } from './prompt'
+import { afterAcceptMessage, afterAcceptProblems } from './afterAccept'
 
 export interface FollowupChange {
   id: number
@@ -44,9 +44,9 @@ export async function refreshRecruiterFollowups(db: SupabaseClient, opts: { comp
     }
     if (!loaded) continue
     const { ctx } = loaded
-    const after = recruiterFollowup(ctx, p.draft, /^([\w -]+ )?[SB]DR$/.test(ctx.roleTitle ?? ''))
+    const after = afterAcceptMessage({ firstName: ctx.firstName, branch: ctx.branch, title: ctx.title, company: ctx.company, roleTitle: ctx.roleTitle, note: p.draft }).text
     if (after === p.followup) continue
-    const problems = followupProblems(after, ctx)
+    const problems = afterAcceptProblems(after, p.draft, ctx.company)
     changes.push({ id: p.id, company: p.company, full_name: p.full_name, status: p.outreach_status, note: p.draft, before: p.followup, after, problems })
     if (opts.write && !problems.length) {
       const { error: e } = await db.from('people').update({ followup: after }).eq('id', p.id)

@@ -20,9 +20,16 @@ export async function loadCompanies(db: SupabaseClient): Promise<CompanyView[]> 
     all<CompanyJob>(db, 'jobs', COMPANY_JOB_COLUMNS),
     all<PersonRow>(db, 'people', PERSON_COLUMNS),
     all<RunSummary>(db, 'people_runs', 'id, company_key, cost_usd, error, finished_at, rule'),
-    db.from('company_settings').select('company_key').eq('fit_override', true),
+    db.from('company_settings').select('company_key, fit_override, hold_reason'),
   ])
-  return buildCompanies(jobs, people, runs, new Set((settings.data ?? []).map((s) => s.company_key as string)))
+  const rows = (settings.data ?? []) as { company_key: string; fit_override: boolean | null; hold_reason: string | null }[]
+  return buildCompanies(
+    jobs,
+    people,
+    runs,
+    new Set(rows.filter((s) => s.fit_override).map((s) => s.company_key)),
+    new Map(rows.filter((s) => s.hold_reason).map((s) => [s.company_key, s.hold_reason!]))
+  )
 }
 
 /** People in page order: companies as sorted, then tree order (branch, then rank). */

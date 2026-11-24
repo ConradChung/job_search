@@ -232,7 +232,9 @@ export function draftProblems(
   if ((text.match(/\?/g) ?? []).length > 1) problems.push('It asks more than one question; keep exactly one ask.')
   // Conrad's own title (not Kalshi's head of growth, which is part of the Kalshi fact).
   if (/head of growth and partnerships|\b(i'm|i am|as|was)\s+(the\s+)?head of growth/i.test(text)) problems.push("Name the partner, not Conrad's title.")
-  if (hasMetric(text)) problems.push('It states or implies a number (count, dollar amount, rate or pipeline); none are on record.')
+  // A company name like "11x" is not a number.
+  const plain = c.company ? text.split(c.company).join(' ').split(c.company.replace(/,?\s+(inc|llc|ltd|corp|co)\.?$/i, '').replace(/\.$/, '')).join(' ') : text
+  if (hasMetric(plain)) problems.push('It states or implies a number (count, dollar amount, rate or pipeline); none are on record.')
   if (FREQUENCY.test(text)) problems.push('No frequency or volume claims ("every week", "daily", "hundreds").')
   if (/^([\w -]+ )?[SB]DR$/.test(c.roleTitle ?? '') && /development representative/i.test(text)) problems.push(`Call the role "${c.roleTitle} role".`)
   if (c.proof.key === 'kalshi' && /kalshi/i.test(text) && !/sourced and closed/i.test(text))

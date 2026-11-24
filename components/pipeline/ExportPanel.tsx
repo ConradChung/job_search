@@ -137,9 +137,9 @@ export function ExportPanel({ visible, tiers, onClose, onExported }: { visible: 
           {preview.overLimit.map((p) => `${p.name} (${p.company}): ${p.length} chars`)}
         </Problem>
       ) : null}
-      {preview?.recruiterNotApplied.length ? (
-        <Problem tone="warn" title={`${preview.recruiterNotApplied.length} recruiter row${preview.recruiterNotApplied.length === 1 ? ' is' : 's are'} for a role not marked Applied. The after-accept message is fixed at export, so it will ask the scope question, not say you applied.`}>
-          {preview.recruiterNotApplied.map((p) => `${p.name} (${p.company}): ${p.role}, ${p.status}`)}
+      {preview?.applyFirst.length ? (
+        <Problem tone="warn" title={`Apply first: ${preview.applyFirst.length} recruiter row${preview.applyFirst.length === 1 ? ' is' : 's are'} held out of this file. Their after-accept message says you've applied, so they go out once the role is marked Applied.`}>
+          {preview.applyFirst.map((p) => `${p.name} (${p.company}): ${p.role}, ${p.status}`)}
         </Problem>
       ) : null}
       {preview?.noUrl.length ? (

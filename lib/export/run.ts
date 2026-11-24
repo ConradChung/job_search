@@ -24,7 +24,8 @@ export interface ExportResult {
   available: number
   noUrl: Listed[]
   overLimit: (Listed & { length: number })[]
-  recruiterNotApplied: (Listed & { role: string; status: string })[]
+  /** Recruiters held out of the file until their role is marked Applied (their message says "I've applied"). */
+  applyFirst: (Listed & { role: string; status: string; link: string | null })[]
   people: Listed[]
   csv?: string
   filename?: string
@@ -50,6 +51,7 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
   const cands: ExportCandidate[] = (people ?? []).map((p) => {
     const fit = companies.get(p.company_key)?.fit
     const exportable = !!fit && (fit.passes || fit.override)
+    const roleStatus = (fit?.primary as { status?: string } | null | undefined)?.status ?? ''
     return {
       id: p.id,
       status: p.outreach_status,
@@ -58,6 +60,7 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
       url: p.linkedin_url,
       name: p.full_name,
       company: p.company,
+      applyFirst: p.branch === 'recruiting' && roleStatus !== 'applied',
     }
   })
   const picked = pickForExport(cands, { tiers: o.tiers, includeExported: o.includeExported, limit: o.limit })
@@ -65,7 +68,11 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
 
   const rows: ExportRow[] = []
   const overLimit: ExportResult['overLimit'] = []
-  const recruiterNotApplied: ExportResult['recruiterNotApplied'] = []
+  const applyFirst: ExportResult['applyFirst'] = picked.applyFirst.map((c) => {
+    const fit = companies.get(byId.get(c.id)!.company_key)!.fit
+    const role = fit.primary as { title?: string | null; status?: string; link?: string } | null
+    return { ...listed(c), role: shortRole(noteRoleTitle(fit, role?.title ?? null)), status: role?.status || 'new', link: role?.link ?? null }
+  })
   for (const c of picked.chosen) {
     const p = byId.get(c.id)!
     const fit = companies.get(p.company_key)!.fit
@@ -74,7 +81,6 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
     if (!note || note.length > PROFILE.noteLimit) overLimit.push({ ...listed(c), length: note.length })
     const roleTitle = shortRole(noteRoleTitle(fit, role?.title ?? null))
     const roleStatus = (role as { status?: string } | null)?.status ?? ''
-    if (p.branch === 'recruiting' && roleStatus !== 'applied') recruiterNotApplied.push({ ...listed(c), role: roleTitle, status: roleStatus || 'new' })
     const { first, last } = splitName(p.full_name)
     rows.push({
       linkedin_url: normalizeLinkedIn(p.linkedin_url)!,
@@ -98,7 +104,7 @@ export async function runExport(db: SupabaseClient, o: ExportOptions): Promise<E
     available: picked.available,
     noUrl: picked.noUrl.map(listed),
     overLimit,
-    recruiterNotApplied,
+    applyFirst,
     people: picked.chosen.map(listed),
   }
   // Refused while any note is over the limit (or missing): nothing is written.

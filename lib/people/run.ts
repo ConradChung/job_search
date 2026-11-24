@@ -4,7 +4,7 @@ import { trackOf } from '@/lib/jobs/categories'
 import { companyFit } from '@/lib/jobs/fit'
 
 const ROLE_COLUMNS =
-  'id, title, company_city:raw->>companyCity, industries:raw->>industries, company, company_key, company_website, company_employees, company_size, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date, closing_required, status'
+  'id, title, company_city:raw->>companyCity, industries:raw->>industries, company, company_key, company_website, company_employees, company_size, fit_tier, liveness, category, category_confidence, seniority, work_mode, work_locations, start_requirement, start_date, closing_required, status, link'
 
 /** Company facts plus its primary role (the one the fit flags and routing use). */
 export async function loadCompany(db: SupabaseClient, companyKey: string) {
@@ -12,8 +12,8 @@ export async function loadCompany(db: SupabaseClient, companyKey: string) {
   if (error) throw new Error(`load company: ${error.message}`)
   if (!data?.length) return null
   const pick = <K extends keyof (typeof data)[number]>(k: K) => data.find((r) => r[k] != null)?.[k] ?? null
-  const { data: settings } = await db.from('company_settings').select('fit_override').eq('company_key', companyKey).maybeSingle()
-  const fit = companyFit(data, settings?.fit_override ?? false)
+  const { data: settings } = await db.from('company_settings').select('fit_override, hold_reason').eq('company_key', companyKey).maybeSingle()
+  const fit = companyFit(data, settings?.fit_override ?? false, undefined, settings?.hold_reason ?? null)
   const input: CompanyInput = {
     company: data[0].company,
     company_key: companyKey,

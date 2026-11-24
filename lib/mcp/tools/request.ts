@@ -91,7 +91,7 @@ const exportCsv = defineTool({
       available: r.available,
       people: r.people.map((p) => ({ id: p.id, company: p.company })),
       no_url: r.noUrl.length,
-      recruiter_not_applied: r.recruiterNotApplied.length,
+      apply_first: r.applyFirst.length,
     }
     const action = await createPendingAction(db, {
       kind: 'export_csv',

@@ -1075,7 +1075,7 @@ function PersonLine({ company, person: p, actions }: { company: CompanyView; per
           <div className="mb-1 flex items-center gap-2 text-[10px] font-medium tracking-wide text-fg-46 uppercase">
             After they accept
             {p.branch === 'recruiting' && company.primary?.status !== 'applied' && (
-              <span className="rounded-full border border-amber/30 bg-amber/10 px-1.5 text-amber normal-case" title="Apply before sending. Setting the role to Applied rewrites this message with the applied wording.">
+              <span className="rounded-full border border-amber/30 bg-amber/10 px-1.5 text-amber normal-case" title="This message says you've applied. Mark the role Applied first; until then the export holds this person back.">
                 apply first
               </span>
             )}

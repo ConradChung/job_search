@@ -22,7 +22,7 @@ export interface FitInput {
 }
 
 export interface FitFlag {
-  code: 'category' | 'seniority' | 'location' | 'start' | 'unclassified' | 'dead' | 'staffing' | 'agency'
+  code: 'category' | 'seniority' | 'location' | 'start' | 'unclassified' | 'dead' | 'staffing' | 'agency' | 'hold'
   /** block: drafting is skipped until the owner overrides. warn: shown, still drafts. info: shown only. */
   level: 'block' | 'warn' | 'info'
   message: string
@@ -158,7 +158,12 @@ export const TRACK_RANK: Record<FitTrack, number> = { gtm_eng: 0, sdr: 1, revops
  * Its flags and track are what the company row shows. Drafting also needs the
  * primary role's track to allow drafting (SDR is paused).
  */
-export function companyFit<J extends FitInput & { id: number; fit_tier: number | null }>(roles: J[], override = false, c: Constraints = PROFILE.constraints) {
+/**
+ * `hold`: the owner's manual hold on this company (company_settings.hold_reason,
+ * e.g. an excluded industry). Not a fit rule: it blocks drafting and export,
+ * beats an override, and leaves notes untouched.
+ */
+export function companyFit<J extends FitInput & { id: number; fit_tier: number | null }>(roles: J[], override = false, c: Constraints = PROFILE.constraints, hold: string | null = null) {
   const scored = roles
     .map((r) => ({ role: r, flags: fitFlags(r, c), home: isHomeRole(r, c), track: fitTrack(r.category, c) }))
     .sort(
@@ -168,6 +173,7 @@ export function companyFit<J extends FitInput & { id: number; fit_tier: number |
         Number(b.home) - Number(a.home) ||
         (a.role.fit_tier ?? 9) - (b.role.fit_tier ?? 9)
     )
+  if (hold) for (const s of scored) s.flags = [{ code: 'hold', level: 'block', message: `Held: ${hold}` }, ...s.flags]
   const primary = scored[0] ?? null
   const passes = !!primary && !blocks(primary.flags)
   const track: FitTrack = primary?.track ?? 'blocked'
@@ -178,8 +184,9 @@ export function companyFit<J extends FitInput & { id: number; fit_tier: number |
     passes,
     track,
     draftPaused,
-    canDraft: (passes || override) && !draftPaused,
-    override,
+    canDraft: (passes || (override && !hold)) && !draftPaused,
+    override: override && !hold,
+    hold,
     home: primary?.home ?? false,
     /** Every role with its own flags, best first. */
     ranked: scored,
