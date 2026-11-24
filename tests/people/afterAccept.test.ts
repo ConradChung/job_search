@@ -15,12 +15,13 @@ describe('persona → template (owner, 2026-11-23)', () => {
     expect(afterAcceptTrack('executive', 'Chief Revenue Officer (CRO)')).toBe('leader')
     expect(afterAcceptTrack('executive', 'Co-founder and CEO')).toBe('founder')
   })
-  it("recruiter (Tier 1/3): the note's role wording, GTM bullets, quick-call close", () => {
+  it("recruiter (Tier 1): the note's role wording, GTM bullets, quick-call close", () => {
     const r = afterAcceptMessage({ firstName: 'Renee', branch: 'recruiting', title: 'Recruiter', company: 'Engine', roleTitle: 'GTM Engineer', fitTrack: 'gtm_eng', note: recNote })
     expect(r.text).toBe(
       "Thanks for connecting, Renee. I've applied for the Software Engineer - GTM Engineering role at Engine.\n\nQuick background:\n" +
         "• GTM Engineering Head at ZenPort AI, where I'm the only GTM hire\n" +
         '• Built the outbound engine end to end: signals, enrichment, scoring, routing, sequencing\n' +
+        '• Software engineering intern at Noble Mobile ($10M seed), building in Python, TypeScript and SQL\n' +
         '• Stack: Clay, Apify, Exa, Supabase, Instantly, Claude Code\n\n' +
         "If it looks like a fit, I'd love to set up a quick call."
     )
@@ -51,6 +52,8 @@ describe('persona → template (owner, 2026-11-23)', () => {
   it('only says "outbound" for outbound roles (leaders and founders); recruiters get bullets either way', () => {
     const rec = afterAcceptMessage({ firstName: 'Sean', branch: 'recruiting', company: 'demandDrive', roleTitle: 'RevOps Engineer', fitTrack: 'revops' }).text
     expect(rec).toContain("I've applied for the RevOps Engineer role at demandDrive.\n\nQuick background:\n• GTM Engineering Head")
+    expect(rec).not.toContain('Noble Mobile') // Tier 3 keeps the three bullets
+    expect(afterAcceptProblems(rec, '', 'demandDrive')).toEqual([])
     const lead = afterAcceptMessage({ firstName: 'Ann', branch: 'gtm_leadership', title: 'VP Sales', company: 'Acme', roleTitle: 'GTM Systems Engineer' }).text
     expect(lead).toBe("Thanks for connecting, Ann.\nI've been thinking about how I'd approach the GTM Systems Engineer seat at Acme. Happy to send a short write-up, or walk you through it in 15 minutes, whichever is easier.")
     for (const r of ['GTM Engineer', 'AI GTM Engineer', 'Founding GTM Engineer', 'SDR', 'BDR', 'Early Stage SDR', 'GTM Automation Engineer']) expect(isOutboundRole(r)).toBe(true)
@@ -99,7 +102,12 @@ describe('after-accept code checks', () => {
     expect(afterAcceptProblems(t.replace('Stack: Clay', 'Booked 40 meetings with Clay'), recNote, 'Engine').join()).toMatch(/approved list/)
     expect(afterAcceptProblems(t.replace('quick call.', 'quick call. Happy to send a write-up for the hiring manager.'), recNote, 'Engine').join()).toMatch(/write-up/)
     expect(afterAcceptProblems(t.replace('Quick background', 'Booked 40 meetings. Quick background'), recNote, 'Engine').join()).toMatch(/numbers/)
-    expect(afterAcceptProblems(`${t}\n${'x'.repeat(450)}`, recNote, 'Engine').join()).toMatch(/under 450/)
+    expect(afterAcceptProblems(`${t}\n${'x'.repeat(550)}`, recNote, 'Engine').join()).toMatch(/under 550/)
+    // The $10M figure is allowed only inside the approved Noble bullet; anywhere else it is a number.
+    expect(afterAcceptProblems(t, recNote, 'Engine')).toEqual([])
+    expect(afterAcceptProblems(t.replace('Quick background', 'Raised $10M. Quick background'), recNote, 'Engine').join()).toMatch(/numbers/)
+    // Tier 1 without the Noble bullet is not an approved set for a fourth-less GTM list mixed with SDR bullets.
+    expect(afterAcceptProblems(t.replace(/\n• Software engineering intern[^\n]*/, '\n• Cold outreach to Coinbase recruiters that turned into on-campus recruiting initiatives'), recNote, 'Engine').join()).toMatch(/one approved set/)
   })
   it('rejects the old failure modes', () => {
     expect(afterAcceptProblems('Thanks for connecting, Ann. Is a March 2027 grad in scope for the GTM Engineer role?').join()).toMatch(/graduation date.*in scope|in scope/)

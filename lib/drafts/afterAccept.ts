@@ -21,13 +21,20 @@ import { contactType } from '@/lib/export/csv'
 export type AfterAcceptTrack = 'bruin' | 'recruiter' | 'leader' | 'founder' | 'fallback'
 
 export const AFTER_ACCEPT_MAX = 300
-/** Recruiter message (owner, 2026-11-23): greeting, three bullets, close. */
-export const RECRUITER_AFTER_ACCEPT_MAX = 450
+/** Recruiter message (owner, 2026-11-23): greeting, bullets (four for Tier 1, three otherwise), close. */
+export const RECRUITER_AFTER_ACCEPT_MAX = 550
 
 /** Recruiter bullets, word for word as the owner wrote them (2026-11-23). */
 export const RECRUITER_BULLETS = {
-  /** Tier 1 (GTM Engineer) and Tier 3 (RevOps / systems). */
+  /** Tier 1 (GTM Engineer). The Noble Mobile "$10M seed" figure is approved by the owner (2026-11-23). */
   gtm: [
+    "GTM Engineering Head at ZenPort AI, where I'm the only GTM hire",
+    'Built the outbound engine end to end: signals, enrichment, scoring, routing, sequencing',
+    'Software engineering intern at Noble Mobile ($10M seed), building in Python, TypeScript and SQL',
+    'Stack: Clay, Apify, Exa, Supabase, Instantly, Claude Code',
+  ],
+  /** Tier 3 (RevOps / systems): the original three. */
+  revops: [
     "GTM Engineering Head at ZenPort AI, where I'm the only GTM hire",
     'Built the outbound engine end to end: signals, enrichment, scoring, routing, sequencing',
     'Stack: Clay, Apify, Exa, Supabase, Instantly, Claude Code',
@@ -41,11 +48,20 @@ export const RECRUITER_BULLETS = {
   /** Replaces the Kalshi bullet when the person's note already mentions Kalshi. */
   sdrFallback: 'Hosted ten events with a16z, Uniswap, Deloitte and others as Head of Growth and Partnerships',
 } as const
-const ALL_BULLETS: string[] = [...RECRUITER_BULLETS.gtm, ...RECRUITER_BULLETS.sdr, RECRUITER_BULLETS.sdrFallback]
+export type BulletSet = 'gtm' | 'revops' | 'sdr'
 
-/** Tier 2 bullets for SDR / BDR roles, Tier 1/3 bullets otherwise. */
-export function recruiterBullets(isSdr: boolean, note: string | null | undefined): string[] {
-  if (!isSdr) return [...RECRUITER_BULLETS.gtm]
+/** Every bullet list a recruiter message may carry, exactly and in order. */
+const APPROVED_SETS: string[][] = [
+  [...RECRUITER_BULLETS.gtm],
+  [...RECRUITER_BULLETS.revops],
+  [...RECRUITER_BULLETS.sdr],
+  [RECRUITER_BULLETS.sdrFallback, ...RECRUITER_BULLETS.sdr.slice(1)],
+]
+
+/** Tier 2 bullets for SDR / BDR roles, Tier 3 for RevOps, Tier 1 otherwise. */
+export function recruiterBullets(set: BulletSet, note: string | null | undefined): string[] {
+  if (set === 'gtm') return [...RECRUITER_BULLETS.gtm]
+  if (set === 'revops') return [...RECRUITER_BULLETS.revops]
   const [kalshi, ...rest] = RECRUITER_BULLETS.sdr
   return [/kalshi/i.test(note ?? '') ? RECRUITER_BULLETS.sdrFallback : kalshi, ...rest]
 }
@@ -139,8 +155,10 @@ export function afterAcceptMessage(i: AfterAcceptInput): { text: string; track: 
   // Role wording exactly as the note named it; bullets by tier.
   const noteRole = fromNote?.role ?? role
   if (track === 'recruiter' && noteRole && company) {
-    const isSdr = i.fitTrack ? i.fitTrack === 'sdr' : /\b(sdr|bdr|sales development|business development)\b/i.test(noteRole)
-    const bullets = recruiterBullets(isSdr, i.note).map((b) => `\u2022 ${b}`).join('\n')
+    const set: BulletSet = i.fitTrack
+      ? i.fitTrack === 'sdr' ? 'sdr' : i.fitTrack === 'revops' ? 'revops' : 'gtm'
+      : /\b(sdr|bdr|sales development|business development)\b/i.test(noteRole) ? 'sdr' : 'gtm'
+    const bullets = recruiterBullets(set, i.note).map((b) => `\u2022 ${b}`).join('\n')
     return {
       track,
       text: `Thanks for connecting, ${name}. I've applied for the ${noteRole} role at ${company}.\n\nQuick background:\n${bullets}\n\nIf it looks like a fit, I'd love to set up a quick call.`,
@@ -176,8 +194,11 @@ export function afterAcceptProblems(text: string, note = '', company: string | n
   const lines = t.split('\n')
   const bulletLines = lines.filter((l) => /^\s*[\u2022\-*]\s/.test(l)).map((l) => l.replace(/^\s*[\u2022\-*]\s+/, '').trim())
   if (recruiter) {
-    if (bulletLines.length !== 3) problems.push('Exactly three bullets.')
-    for (const b of bulletLines) if (!ALL_BULLETS.includes(b)) problems.push(`Bullet not on the approved list: "${b}"`)
+    const approved = new Set(APPROVED_SETS.flat())
+    for (const b of bulletLines) if (!approved.has(b)) problems.push(`Bullet not on the approved list: "${b}"`)
+    if (!APPROVED_SETS.some((s) => s.length === bulletLines.length && s.every((b, k) => b === bulletLines[k]))) {
+      problems.push('Bullets must be one approved set, in order (four for Tier 1, three for Tier 2 and Tier 3).')
+    }
     if (!/\n\nIf it looks like a fit, I'd love to set up a quick call\.$/.test(t)) problems.push('Must end with the quick-call line.')
     if (/write-up|hiring manager/i.test(t)) problems.push('No write-up offer to recruiters.')
   } else if (bulletLines.length) problems.push('Bullets are for recruiter messages only.')
