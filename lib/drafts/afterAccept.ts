@@ -280,7 +280,7 @@ export function afterAcceptProblems(text: string, note = '', company: string | n
   if (/in scope|in-scope|eligible|qualif(y|ied) for/i.test(t)) problems.push('Never ask whether you are in scope.')
   if (/\b(audit|teardown|tear-down|free|no[- ]cost|complimentary|our (service|agency)|we can help)\b/i.test(researched ? frame : t)) problems.push('Sounds like a vendor pitch; write as a candidate.')
   const backRef = /\b(beyond the|on top of the|as i (said|mentioned)|i mentioned|the .{0,40} i mentioned|like i said|following up on)\b/i
-  if (backRef.test(t)) problems.push('Refers back to something; only what this message says.')
+  if (backRef.test(researched ? frame : t)) problems.push('Refers back to something; only what this message says.')
   for (const word of researched ? [] : ['kalshi', 'coinbase', 'outbound work', 'pipelines', 'platform', 'prospecting']) {
     if (frame.toLowerCase().includes(word) && !note.toLowerCase().includes(word)) problems.push(`Mentions "${word}", which the note did not say.`)
   }

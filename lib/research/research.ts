@@ -5,23 +5,52 @@ import { hasMetric, INTERNAL_NAMES } from '@/lib/drafts/prompt'
 import { BANK_KEYS, EXPERIENCE_BANK, isBankKey, type BankKey } from './bank'
 
 /**
- * Company research for the after-accept messages (owner, 2026-11-23).
- * Two Exa searches (company-owned pages, then press), both limited to the last
- * 12 months, then one Claude call that picks a single specific item (or none)
- * and the three experience-bank items that best match the posting. Everything
- * the model returns is checked in code; a failed check leaves the hook empty.
+ * Role-relevant hook research (owner, 2026-11-23, v2).
+ *
+ * 1. Find who runs go-to-market (CRO, VP Sales, Head of Growth, RevOps, a GTM-minded
+ *    founder): people already in the tracker plus one Exa people search.
+ * 2. Search their podcasts, interviews, talks and posts from the last 12 months
+ *    (YouTube and podcast sites included), then company launches and customer
+ *    stories; engineering content only as a last resort. Exa returns the page
+ *    text plus query-targeted excerpts of the show notes or transcript.
+ * 3. One Claude call reads that content and proposes up to three candidates, each
+ *    a specific idea (named practice, decision, ratio, how they run pilots or
+ *    structure the team) with a verbatim quote, a one-clause tie to the role, a
+ *    hook sentence and a short hook, plus the three experience-bank items.
+ * 4. Code checks every candidate: the quote must be in the source, the idea must
+ *    not be readable from the title alone, no headline growth numbers, no numbers
+ *    in the hook, first person, word limits. Failures are dropped, never patched.
  */
 
 export const RESEARCH_MODEL = 'claude-opus-5-5'
 const PRICE = { input: 4 / 1e6, output: 20 / 1e6 }
-export const EST_RESEARCH_COST = 0.05
+export const EST_RESEARCH_COST = 0.12
+
+export type CandidateKind = 'gtm_leader' | 'launch' | 'customer_story' | 'engineering' | 'owner_link'
+const KIND_RANK: Record<CandidateKind, number> = { owner_link: -1, gtm_leader: 0, launch: 1, customer_story: 1, engineering: 2 }
 
 export interface SourceItem {
   url: string
   title: string
   publishedDate: string | null
   text: string
-  kind: 'company' | 'press'
+  highlights: string[]
+  /** Which search found it (for the prompt only). */
+  via: string
+}
+
+export interface HookCandidate {
+  url: string
+  title: string
+  date: string | null
+  kind: CandidateKind
+  speaker: string | null
+  speaker_title: string | null
+  idea: string
+  evidence: string
+  role_clause: string
+  hook_sentence: string
+  hook_short: string
 }
 
 export interface ResearchInput {
@@ -30,25 +59,26 @@ export interface ResearchInput {
   industries: string | null
   roleTitle: string
   posting: string
+  /** GTM people already in the tracker (name, title). */
+  knownLeaders?: { name: string; title: string | null }[]
 }
 
-export interface ResearchRecord {
-  hook_source_url: string | null
-  hook_title: string | null
-  hook_date: string | null
-  hook_summary: string | null
-  hook_sentence: string | null
-  hook_short: string | null
+export interface ResearchResult {
+  hook_candidates: HookCandidate[]
   fit_items: BankKey[]
   why_no_hook: string | null
-  candidates: { url: string; title: string; date: string | null; kind: string }[]
+  /** Every source the searches returned (for the record). */
+  candidates: { url: string; title: string; date: string | null; via: string }[]
+  rejected: string[]
+  leaders: { name: string; title: string | null }[]
   model: string
   cost_usd: number
+  fitError?: string
 }
 
-/** Job boards, aggregators, social and data sites: never a hook source. */
+/** Job boards, people/company databases, review sites: never a hook source. YouTube, podcasts, Substack, Medium and LinkedIn posts are allowed. */
 const NOT_A_SOURCE =
-  /(^|\.)(linkedin|glassdoor|indeed|ziprecruiter|lever|greenhouse|ashbyhq|workable|wellfound|builtin|crunchbase|pitchbook|zoominfo|rocketreach|apollo|tracxn|cbinsights|craft|owler|g2|capterra|getapp|trustradius|reddit|quora|facebook|instagram|twitter|x|tiktok|wikipedia|medium|substack|youtube|github|producthunt|ycombinator|f6s|dealroom|signalhire|leadiq|theorg|comparably|levels|teamblind|simplify|otta|welcometothejungle|jobs|jobright|remoterocketship)\.(com|co|io|fyi|org|ai|net)$/i
+  /(^|\.)(glassdoor|indeed|ziprecruiter|lever|greenhouse|ashbyhq|workable|wellfound|builtin|crunchbase|pitchbook|zoominfo|rocketreach|apollo|tracxn|cbinsights|craft|owler|g2|capterra|getapp|trustradius|quora|wikipedia|f6s|dealroom|signalhire|leadiq|theorg|comparably|levels|teamblind|simplify|otta|welcometothejungle|jobs|jobright|remoterocketship|glassdoor)\.(com|co|io|fyi|org|ai|net)$/i
 
 export function domainOf(url: string | null | undefined): string | null {
   try {
@@ -59,106 +89,245 @@ export function domainOf(url: string | null | undefined): string | null {
 }
 
 const GENERIC = /\b(your mission|the mission|your vision|your values|your culture|what you're building|what your team is building|the work you('re| are) doing|your growth|your success|your journey|impressive|inspiring|amazing work|great work)\b/i
+/** Headline growth numbers everyone quotes: never the idea. */
+const HEADLINE = /\b(arr|revenue|valuation|valued|raised|raise|funding|series [a-f]|unicorn|grew|growth rate|hypergrowth|\d+x|\$\s?\d)/i
+const GTM_TITLE = /\b(cro|chief revenue|chief commercial|chief growth|vp,? (of )?(sales|revenue|growth|go[- ]to[- ]market|gtm|marketing)|head of (sales|growth|revenue|gtm|go[- ]to[- ]market|revops|revenue operations)|revenue operations|revops|svp.*(sales|revenue)|gtm lead|founder|co-?founder|ceo|president)\b/i
 
-/** Exa search, last 12 months, with page text. */
-export async function exaRecent(
-  query: string,
-  opts: { includeDomains?: string[]; category?: 'news'; since: string; apiKey?: string }
-): Promise<{ items: Omit<SourceItem, 'kind'>[]; cost: number }> {
-  const apiKey = opts.apiKey ?? process.env.EXA_API_KEY
+type ExaItem = { url: string; title?: string; publishedDate?: string; text?: string; highlights?: string[] }
+type ExaResponse = { results?: ExaItem[]; costDollars?: { total?: number } }
+
+async function exa(path: '/search' | '/contents', body: Record<string, unknown>, apiKey = process.env.EXA_API_KEY): Promise<ExaResponse> {
   if (!apiKey) throw new Error('EXA_API_KEY is not set')
-  const res = await fetch('https://api.exa.ai/search', {
+  const res = await fetch(`https://api.exa.ai${path}`, {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      query,
-      type: 'auto',
-      numResults: 6,
-      startPublishedDate: opts.since,
-      ...(opts.includeDomains ? { includeDomains: opts.includeDomains } : {}),
-      ...(opts.category ? { category: opts.category } : {}),
-      contents: { text: { maxCharacters: 1500 } },
-    }),
+    body: JSON.stringify(body),
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`Exa ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
-  const data = (await res.json()) as { results?: { url: string; title?: string; publishedDate?: string; text?: string }[]; costDollars?: { total?: number } }
-  return {
-    items: (data.results ?? []).map((r) => ({ url: r.url, title: r.title ?? '', publishedDate: r.publishedDate ?? null, text: (r.text ?? '').replace(/\s+/g, ' ').slice(0, 1500) })),
-    cost: Number(data.costDollars?.total ?? 0),
-  }
+  return (await res.json()) as ExaResponse
 }
 
-/** Items that can be a hook at all: dated within 12 months, not a job board or aggregator, not a careers page. */
-export function usableSources(items: SourceItem[], now = new Date()): SourceItem[] {
+const toItem = (r: ExaItem, via: string): SourceItem => ({
+  url: r.url,
+  title: (r.title ?? '').replace(/\s+/g, ' ').trim(),
+  publishedDate: r.publishedDate ?? null,
+  text: (r.text ?? '').replace(/\s+/g, ' ').slice(0, 1800),
+  highlights: (r.highlights ?? []).map((h) => h.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 3),
+  via,
+})
+
+/** What the excerpts should be about, by role: the work that role does. */
+export function highlightQuery(roleTitle: string): string {
+  const r = roleTitle.toLowerCase()
+  const focus = /\b(sdr|bdr|sales development|business development)\b/.test(r)
+    ? 'outbound prospecting, the SDR team, how meetings are booked, territories, sales process'
+    : /\b(revops|revenue operations|operations|systems|analytics)\b/.test(r)
+      ? 'GTM systems, CRM, data, lead routing and scoring, forecasting, sales process, tooling'
+      : 'GTM engineering, outbound systems, data enrichment, automation, lead routing, AI in sales'
+  return `How they run go-to-market: ${focus}, how the sales team is structured, how pilots run, specific practices and decisions`
+}
+
+/** Content search: last 12 months, page text plus role-targeted excerpts. */
+async function contentSearch(query: string, since: string, highlights: string, numResults: number, via: string, extra: Record<string, unknown> = {}) {
+  const d = await exa('/search', {
+    query,
+    type: 'auto',
+    numResults,
+    startPublishedDate: since,
+    contents: { text: { maxCharacters: 1800 }, highlights: { query: highlights, numSentences: 3, highlightsPerUrl: 3 } },
+    ...extra,
+  })
+  return { items: (d.results ?? []).map((r) => toItem(r, via)), cost: Number(d.costDollars?.total ?? 0) }
+}
+
+/** Who runs GTM: tracker people first, then an Exa people search (names from "Name - Title at Company" result titles). */
+export async function findLeaders(company: string, known: { name: string; title: string | null }[] = []): Promise<{ leaders: { name: string; title: string | null }[]; cost: number }> {
+  const d = await exa('/search', { query: `${company} Chief Revenue Officer, VP Sales, Head of Growth or RevOps lead`, category: 'people', numResults: 8, contents: { text: { maxCharacters: 400 } } })
+  const first = company.toLowerCase().split(/\s/)[0]
+  const found = (d.results ?? [])
+    .map((r) => {
+      // Result title is the name; the profile text opens with the headline / current role.
+      const head = (r.text ?? '').replace(/\s+/g, ' ').slice(0, 300)
+      const role = head.match(GTM_TITLE)
+      return { name: (r.title ?? '').split(/\s+[-|–]\s+/)[0].trim(), title: role ? head.slice(Math.max(0, (role.index ?? 0) - 40), (role.index ?? 0) + 80).trim() : null, head }
+    })
+    .filter((p) => p.name && p.title && p.head.toLowerCase().includes(first))
+    .map(({ name, title }) => ({ name, title: title!.replace(/^#+\s*/, '').split(name).join('').replace(/\s+/g, ' ').trim() }))
+  const all = [...known.filter((k) => GTM_TITLE.test(k.title ?? '')), ...found]
+  const seen = new Set<string>()
+  const leaders = all.filter((l) => {
+    const k = l.name.toLowerCase()
+    if (seen.has(k) || l.name.split(/\s+/).length < 2) return false
+    seen.add(k)
+    return true
+  })
+  // Most senior GTM first: CRO / chief, then SVP / VP, then heads and RevOps, founders last.
+  const rank = (t: string | null) => (/\b(cro|chief (revenue|commercial|growth))\b/i.test(t ?? '') ? 0 : /\b(s?vp|vice president)\b/i.test(t ?? '') ? 1 : /founder|ceo|president/i.test(t ?? '') ? 3 : 2)
+  leaders.sort((a, b) => rank(a.title) - rank(b.title))
+  return { leaders: leaders.slice(0, 3), cost: Number(d.costDollars?.total ?? 0) }
+}
+
+/** Items that can be a hook at all: dated within 12 months (owner links excepted), not a job board or database, not a careers page, with real content. */
+export function usableSources(items: SourceItem[], now = new Date(), opts: { allowUndated?: boolean } = {}): SourceItem[] {
   const cutoff = new Date(now.getTime() - 365 * 864e5)
   const seen = new Set<string>()
   return items.filter((i) => {
     const d = i.publishedDate ? new Date(i.publishedDate) : null
     const host = domainOf(i.url)
-    if (!d || isNaN(+d) || d < cutoff || d > new Date(now.getTime() + 864e5)) return false
+    if (!opts.allowUndated && (!d || isNaN(+d) || d < cutoff || d > new Date(now.getTime() + 864e5))) return false
     if (!host || NOT_A_SOURCE.test(host)) return false
-    if (/\/(careers?|jobs?|join-us|open-roles|privacy|terms|legal)(\/|$)/i.test(new URL(i.url).pathname)) return false
-    if (seen.has(i.url)) return false
-    seen.add(i.url)
+    let path = ''
+    try {
+      path = new URL(i.url).pathname
+    } catch {
+      return false
+    }
+    if (/\/(careers?|jobs?|join-us|open-roles|privacy|terms|legal)(\/|$)/i.test(path)) return false
+    if (host.endsWith('linkedin.com') && !/^\/(posts|pulse)\//.test(path)) return false
+    if (i.text.length + i.highlights.join(' ').length < 400) return false
+    const key = i.url.replace(/[?#].*$/, '').replace(/\/$/, '')
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 }
 
-/** Structured output (Opus 5.5 does not take a forced tool choice). Counts and lengths are checked in code. */
-const ResearchOutput = z.object({
-  hook_index: z.number().int().nullable().describe('Index of the chosen source item, or null when none is specific, recent and about this company.'),
-  why_no_hook: z.string().nullable().describe('When hook_index is null: one short reason.'),
-  hook_summary: z.string().nullable().describe('One line: what the item is.'),
-  hook_sentence: z.string().nullable().describe('First person, at most 35 words, about the specific item.'),
-  hook_short: z.string().nullable().describe('Same hook in at most 15 words, first person, no final period.'),
-  fit_items: z.array(z.enum(BANK_KEYS as [BankKey, ...BankKey[]])).describe('Exactly three bank keys, best match first.'),
+const Candidate = z.object({
+  source_index: z.number().int().describe('Index of the source item.'),
+  kind: z.enum(['gtm_leader', 'launch', 'customer_story', 'engineering']).describe('gtm_leader: a GTM leader or GTM-minded founder speaking or writing.'),
+  speaker: z.string().nullable().describe('Who says it (full name), or null for a company post with no named author.'),
+  speaker_title: z.string().nullable(),
+  idea: z.string().describe('The one specific idea, in a short clause, as the source states it.'),
+  evidence: z.string().describe('A verbatim quote (copied exactly, 40-300 characters) from that item\'s text or excerpts that states the idea.'),
+  role_clause: z.string().describe('One clause: why this idea matters for the work the applied-for role does.'),
+  hook_sentence: z.string().describe('At most 45 words, at most two sentences, first person: the idea, then the role tie.'),
+  hook_short: z.string().describe('At most 15 words, opens a sentence that continues ", and I think my experience in ...". No final period.'),
 })
+const ResearchOutput = z.object({
+  candidates: z.array(Candidate).describe('Up to three, best first. Empty when nothing qualifies.'),
+  none_reason: z.string().nullable().describe('When there are no candidates: one short reason.'),
+  fit_items: z.array(z.enum(BANK_KEYS as [BankKey, ...BankKey[]])).describe('Exactly three bank keys, best match to the posting first.'),
+})
+type Output = z.infer<typeof ResearchOutput>
 
-const SYSTEM = `You help Conrad, a UCLA student applying for GTM roles, write a short thank-you note to a recruiter after applying.
+const EXAMPLE = `Worked example of the quality wanted:
+Company: Legora. Role: GTM Systems.
+Source: GTMnow Podcast with CRO Patrick Forquer.
+Idea: Legora staffs post-sale two to one against pre-sale.
+role_clause: building the systems behind a motion that customer-heavy is exactly the work I want to do
+hook_sentence: "I really enjoyed Patrick Forquer's GTMnow episode, especially that Legora staffs post-sale two to one against pre-sale. Building the systems behind a motion that customer-heavy is exactly the work I want to do."
+hook_short: "Loved Patrick Forquer's GTMnow episode on the two-to-one post-sale model"`
 
-Pick ONE source item to mention, or none:
-- It must be a real, specific item about THIS company (not a company with a similar name): a product launch, an engineering or GTM blog post, a podcast episode, funding news or a customer case study.
-- Company-owned pages or reputable press only. Not job posts, listicles, directories, SEO pages or generic "about us" pages.
-- If nothing is specific and clearly about this company, return hook_index null. Never invent or generalise; never write about "your mission", values or culture.
+const SYSTEM = `You research a company for Conrad, a UCLA student who applied for a GTM role there, so his thank-you note to the recruiter shows he actually read or listened to something relevant.
 
-hook_sentence: first person, at most 35 words, one sentence, says what Conrad found interesting about that specific item and why, plainly. No numbers or amounts, no flattery words (impressive, amazing, inspiring), no em dashes, no question.
-hook_short: the same idea in at most 15 words, first person, written to open a sentence that continues ", and I think my experience in ... lines up well." No final period. Example: "I enjoyed reading about your new routing agent launch".
+Find up to three candidates, best first, in this order of preference:
+1. A go-to-market leader (CRO, VP Sales, Head of Growth, RevOps lead, or a founder talking about GTM) in a podcast, interview, talk or post.
+2. Otherwise a product launch or a customer story.
+3. Engineering content only if nothing else exists.
 
-fit_items: the three items from the experience bank that best match the WORDING of the job posting. Only bank keys. Pick by what the posting asks for; never stretch.
+Each candidate is ONE specific idea taken from the content itself (the text or excerpts), not the title: a named practice, a decision, a ratio, how they run pilots, how they structure or staff the team, how they qualify or route deals. If someone could write the idea without opening the link, it does not qualify. Skip headline growth numbers (ARR, revenue, valuation, funding, growth rates); everyone quotes those. The idea must be about THIS company.
+
+evidence: copy a sentence or phrase from that item's text or excerpts exactly, character for character, that states the idea.
+role_clause: one clause on why the idea matters for the work the applied-for role does (read the posting).
+hook_sentence: first person, at most 45 words, at most two sentences: what Conrad enjoyed and the specific idea, then the role tie. Name the speaker, and the show only as this item's own title or header names it (pages often list other episodes; never borrow their names). Write numbers as words only for ratios like "two to one"; otherwise no numbers or amounts. No flattery words (impressive, amazing, inspiring), no em dashes, no questions.
+hook_short: at most 15 words, may start "Loved" or "I enjoyed", names the speaker or source and the idea, no final period.
+
+If nothing qualifies, return no candidates and say why. Never invent or generalise; never write about "your mission", values or culture.
+
+fit_items: the three items from the experience bank that best match the WORDING of the job posting. Only bank keys; never stretch.
 
 Experience bank (key: item; what it matches):
-${BANK_KEYS.map((k) => `- ${k}: ${EXPERIENCE_BANK[k].email}; matches ${EXPERIENCE_BANK[k].hint}`).join('\n')}`
+${BANK_KEYS.map((k) => `- ${k}: ${EXPERIENCE_BANK[k].email}; matches ${EXPERIENCE_BANK[k].hint}`).join('\n')}
 
-function userPrompt(i: ResearchInput, items: SourceItem[]): string {
+${EXAMPLE}`
+
+function userPrompt(i: ResearchInput, leaders: { name: string; title: string | null }[], items: SourceItem[]): string {
   return [
     `Company: ${i.company}${i.website ? ` (${i.website})` : ''}${i.industries ? `. Industry: ${i.industries}` : ''}`,
+    `GTM leaders found: ${leaders.length ? leaders.map((l) => `${l.name}${l.title ? ` (${l.title})` : ''}`).join('; ') : 'none found'}`,
     `Role applied for: ${i.roleTitle}`,
-    `Job posting (excerpt):\n${i.posting.slice(0, 5000) || '(no posting text)'}`,
-    `Source items from the last 12 months:\n${
+    `Job posting (excerpt):\n${i.posting.slice(0, 4000) || '(no posting text)'}`,
+    `Source items:\n${
       items.length
-        ? items.map((s, k) => `[${k}] (${s.kind}) ${s.title}\n${s.url}\nPublished ${s.publishedDate?.slice(0, 10)}\n${s.text}`).join('\n\n')
+        ? items
+            .map((s, k) => `[${k}] ${s.title}\n${s.url}\nPublished ${s.publishedDate?.slice(0, 10) ?? 'unknown'} · found by: ${s.via}\nExcerpts:\n${s.highlights.map((h) => `- ${h}`).join('\n') || '(none)'}\nText: ${s.text}`)
+            .join('\n\n')
         : '(none found)'
     }`,
   ].join('\n\n')
 }
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length
+const norm = (s: string) => s.toLowerCase().replace(/[‘’]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim()
+const STOP = new Set('this that with from they their there have been what when where which about into over more most also just very much than then them only some such like your ours were will would could should does doing being make makes made team company'.split(' '))
 
 /** Code checks on a hook; [] = fine. */
 export function hookProblems(sentence: string | null, short: string | null, company: string): string[] {
   const out: string[] = []
   if (!sentence || !short) return ['Hook text missing.']
-  if (words(sentence) > 35) out.push('Hook sentence is over 35 words.')
+  if (words(sentence) > 45) out.push('Hook sentence is over 45 words.')
+  if ((sentence.match(/[.!](\s|$)/g) ?? []).length > 2) out.push('Hook is more than two sentences.')
   if (words(short) > 15) out.push('Short hook is over 15 words.')
+  if (!/\b(I|I'm|I've|I'd|my|me)\b/.test(sentence)) out.push('Hook sentence is not first person.')
+  if (!/\b(I|I'm|I've|I'd|my|me)\b/.test(short) && !/^(really )?(loved|enjoyed|liked|appreciated)\b/i.test(short.trim())) out.push('Short hook is not first person.')
   for (const [name, s] of [['Hook sentence', sentence], ['Short hook', short]] as const) {
-    if (!/\b(I|I'm|I've|I'd|my|me)\b/.test(s)) out.push(`${name} is not first person.`)
+    const t = s.split(company).join(' ')
     if (GENERIC.test(s)) out.push(`${name} is generic.`)
-    if (/\d/.test(s.split(company).join(' ')) || hasMetric(s.split(company).join(' '))) out.push(`${name} has a number.`)
+    if (/\d/.test(t) || hasMetric(t)) out.push(`${name} has a number.`)
+    if (HEADLINE.test(t)) out.push(`${name} leans on a headline growth number.`)
     if (/[—?]/.test(s)) out.push(`${name} has an em dash or a question.`)
     if (INTERNAL_NAMES.test(s)) out.push(`${name} names an internal project.`)
   }
   if (/[.!]$/.test(short.trim())) out.push('Short hook must not end with a period.')
+  return out
+}
+
+/** The idea must come from the content: quote found in the source, and not just the title restated. */
+export function groundingProblems(c: { idea: string; evidence: string }, item: SourceItem, names: string[] = []): string[] {
+  const out: string[] = []
+  const body = norm([item.text, ...item.highlights].join(' '))
+  const ev = norm(c.evidence)
+  if (ev.length < 30) out.push('Quote is too short to show the idea.')
+  else if (!body.includes(ev)) out.push('Quote is not in the source.')
+  if (norm(item.title).includes(ev)) out.push('Quote is only the title.')
+  const skip = new Set(names.flatMap((n) => norm(n).split(' ')))
+  const ideaWords = norm(c.idea).split(' ').filter((w) => w.length > 3 && !STOP.has(w) && !skip.has(w))
+  const title = norm(item.title)
+  if (ideaWords.length && ideaWords.filter((w) => title.includes(w)).length / ideaWords.length > 0.6) out.push('The idea can be read from the title alone.')
+  if (HEADLINE.test(c.idea)) out.push('The idea is a headline growth number.')
+  return out
+}
+
+/** Show or outlet names the hook attributes the idea to ("Stevie Case's Operators Said episode" → "Operators Said"). */
+export function namedShows(text: string): string[] {
+  const out: string[] = []
+  const re = /((?:[A-Z][\w.&'’-]*\s+){0,4}[A-Z][\w.&-]*)\s+(episode|podcast|interview|talk|keynote|webinar|newsletter|show|session|panel)\b/g
+  for (const m of text.matchAll(re)) {
+    // Drop the person part of a possessive ("Patrick Forquer's GTMnow" → "GTMnow"); a bare possessive is a person, not a show.
+    const parts = m[1].split(/['’]s\s+/)
+    const show = parts.length > 1 ? parts[parts.length - 1] : /['’]s$/.test(m[1]) ? '' : m[1]
+    const clean = show.replace(/^(the|a|an|his|her|their|your)\s+/i, '').trim()
+    if (clean && !/^(I|I've|I'm|Loved|Enjoyed|Really|The)$/i.test(clean)) out.push(clean)
+  }
+  return out
+}
+
+/** Attribution: a show named in the hook must be this page's own (title, header or URL); the speaker must appear in the source. */
+export function attributionProblems(c: { speaker: string | null; hook_sentence: string; hook_short: string; kind?: string }, item: Pick<SourceItem, 'url' | 'title' | 'text' | 'highlights'>): string[] {
+  const out: string[] = []
+  const squash = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  // YouTube puts the channel and description further down; other pages name their show in the header.
+  const headerLen = /youtube\.com|youtu\.be/.test(item.url) ? 3000 : 500
+  const header = squash(`${item.title} ${item.text.slice(0, headerLen)} ${item.url}`)
+  // The owner's own link: they vouch for the show name.
+  for (const show of c.kind === 'owner_link' ? [] : new Set([...namedShows(c.hook_sentence), ...namedShows(c.hook_short)])) {
+    if (!header.includes(squash(show))) out.push(`"${show}" is not this page's show or outlet.`)
+  }
+  if (c.speaker) {
+    const last = c.speaker.trim().split(/\s+/).pop() ?? ''
+    if (last.length > 2 && !squash(`${item.title} ${item.text} ${item.highlights.join(' ')}`).includes(squash(last))) out.push(`Speaker ${c.speaker} is not in the source.`)
+  }
   return out
 }
 
@@ -169,56 +338,109 @@ export function fitProblems(keys: unknown): string[] {
   return []
 }
 
-type ToolOut = { hook_index: number | null; why_no_hook: string | null; hook_summary: string | null; hook_sentence: string | null; hook_short: string | null; fit_items: string[] }
+/** Model output → checked candidates (top three by kind, then the model's order). */
+export function toCandidates(out: Pick<Output, 'candidates'>, items: SourceItem[], company: string, ownerLink = false): { kept: HookCandidate[]; rejected: string[] } {
+  const kept: HookCandidate[] = []
+  const rejected: string[] = []
+  const used = new Set<string>()
+  for (const c of out.candidates ?? []) {
+    const item = items[c.source_index]
+    if (!item) {
+      rejected.push(`#${c.source_index}: no such source`)
+      continue
+    }
+    const short = c.hook_short.trim().replace(/[.!]+$/, '')
+    const problems = [
+      ...groundingProblems(c, item, [company, c.speaker ?? '']),
+      ...attributionProblems({ ...c, hook_short: short, kind: ownerLink ? 'owner_link' : c.kind }, item),
+      ...hookProblems(c.hook_sentence.trim(), short, company),
+      ...(c.role_clause?.trim() ? [] : ['No role tie.']),
+      ...(used.has(item.url) ? ['Same source twice.'] : []),
+    ]
+    if (problems.length) {
+      rejected.push(`${item.url}: ${problems.join(' ')}`)
+      continue
+    }
+    used.add(item.url)
+    kept.push({
+      url: item.url,
+      title: item.title.slice(0, 300),
+      date: item.publishedDate?.slice(0, 10) ?? null,
+      kind: ownerLink ? 'owner_link' : c.kind,
+      speaker: c.speaker?.trim() || null,
+      speaker_title: c.speaker_title?.trim() || null,
+      idea: c.idea.trim(),
+      evidence: c.evidence.trim(),
+      role_clause: c.role_clause.trim(),
+      hook_sentence: c.hook_sentence.trim(),
+      hook_short: short,
+    })
+  }
+  kept.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
+  return { kept: kept.slice(0, 3), rejected }
+}
 
-/** Turn the model's answer into a record; any failed check empties the hook (never the fit line unless it's invalid). */
-export function toRecord(out: ToolOut, items: SourceItem[], company: string, cost: number): ResearchRecord & { fitError?: string } {
-  const candidates = items.map((s) => ({ url: s.url, title: s.title, date: s.publishedDate?.slice(0, 10) ?? null, kind: s.kind }))
+async function ask(client: Anthropic, prompt: string) {
+  const res = await client.messages.parse({
+    model: RESEARCH_MODEL,
+    max_tokens: 12000,
+    system: SYSTEM,
+    output_config: { effort: 'low', format: zodOutputFormat(ResearchOutput) },
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const cost = res.usage.input_tokens * PRICE.input + res.usage.output_tokens * PRICE.output
+  if (!res.parsed_output) throw new Error(`research: no structured output (stop: ${res.stop_reason})`)
+  return { out: res.parsed_output, cost }
+}
+
+/** Research one company (about $0.10): leaders, three or four content searches, one Claude call. */
+export async function researchCompany(client: Anthropic, i: ResearchInput, now = new Date()): Promise<ResearchResult> {
+  const since = new Date(now.getTime() - 365 * 864e5).toISOString()
+  const hl = highlightQuery(i.roleTitle)
+  let cost = 0
+  const { leaders, cost: lc } = await findLeaders(i.company, i.knownLeaders)
+  cost += lc
+  const searches: Promise<{ items: SourceItem[]; cost: number }>[] = [
+    contentSearch(`${i.company} go-to-market leader podcast or interview: CRO, VP Sales, Head of Growth or founder on how they sell`, since, hl, 6, 'GTM podcasts and interviews'),
+    ...leaders.slice(0, 2).map((l) => contentSearch(`${l.name} ${i.company} podcast, interview, talk or post`, since, hl, 4, `${l.name}`)),
+  ]
+  const domain = domainOf(i.website)
+  if (domain && /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(domain) && !NOT_A_SOURCE.test(domain)) {
+    searches.push(contentSearch(`${i.company} product launch, customer story or how we sell`, since, hl, 4, 'company site', { includeDomains: [domain] }))
+  }
+  const results = await Promise.all(searches)
+  const items: SourceItem[] = []
+  for (const r of results) {
+    cost += r.cost
+    items.push(...r.items)
+  }
+  const usable = usableSources(items, now).slice(0, 14)
+  const { out, cost: cc } = await ask(client, userPrompt(i, leaders, usable))
+  cost += cc
+  const { kept, rejected } = toCandidates(out, usable, i.company)
   const fitErr = fitProblems(out.fit_items)
-  const base = { fit_items: (fitErr.length ? [] : out.fit_items) as BankKey[], candidates, model: RESEARCH_MODEL, cost_usd: cost, ...(fitErr.length ? { fitError: fitErr[0] } : {}) }
-  const empty = { hook_source_url: null, hook_title: null, hook_date: null, hook_summary: null, hook_sentence: null, hook_short: null }
-  const k = out.hook_index
-  if (k === null || k === undefined || !Number.isInteger(k) || !items[k]) return { ...empty, ...base, why_no_hook: out.why_no_hook?.slice(0, 300) || 'Nothing specific found in the last 12 months.' }
-  const problems = hookProblems(out.hook_sentence?.trim() ?? null, out.hook_short?.trim().replace(/[.!]+$/, '') ?? null, company)
-  if (problems.length) return { ...empty, ...base, why_no_hook: `Hook dropped: ${problems.join(' ')}` }
-  const s = items[k]
   return {
-    ...base,
-    hook_source_url: s.url,
-    hook_title: s.title.slice(0, 300),
-    hook_date: s.publishedDate!.slice(0, 10),
-    hook_summary: out.hook_summary?.trim().slice(0, 300) || null,
-    hook_sentence: out.hook_sentence!.trim(),
-    hook_short: out.hook_short!.trim().replace(/[.!]+$/, ''),
-    why_no_hook: null,
+    hook_candidates: kept,
+    fit_items: (fitErr.length ? [] : out.fit_items) as BankKey[],
+    why_no_hook: kept.length ? null : (out.none_reason?.slice(0, 300) || (rejected.length ? `Every candidate failed the checks: ${rejected[0]}` : 'Nothing specific found in the last 12 months.')),
+    candidates: usable.map((s) => ({ url: s.url, title: s.title, date: s.publishedDate?.slice(0, 10) ?? null, via: s.via })),
+    rejected,
+    leaders,
+    model: RESEARCH_MODEL,
+    cost_usd: cost,
+    ...(fitErr.length ? { fitError: fitErr[0] } : {}),
   }
 }
 
-/** Research one company: two Exa searches and one Claude call. Returns the record and its cost. */
-export async function researchCompany(client: Anthropic, i: ResearchInput, now = new Date()): Promise<ResearchRecord & { fitError?: string }> {
-  const since = new Date(now.getTime() - 365 * 864e5).toISOString()
-  const domain = domainOf(i.website)
-  let cost = 0
-  const items: SourceItem[] = []
-  // Only a plain hostname can scope the company-owned search (some sheet rows hold junk in the website column).
-  if (domain && /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(domain) && !NOT_A_SOURCE.test(domain)) {
-    const own = await exaRecent(`${i.company} product launch, engineering blog, customer story or announcement`, { includeDomains: [domain], since })
-    cost += own.cost
-    items.push(...own.items.map((x) => ({ ...x, kind: 'company' as const })))
-  }
-  const press = await exaRecent(`${i.company}${domain ? ` (${domain})` : ''} news: launch, funding, podcast or customer`, { category: 'news', since })
-  cost += press.cost
-  items.push(...press.items.map((x) => ({ ...x, kind: 'press' as const })))
-  const usable = usableSources(items, now)
-
-  const res = await client.messages.parse({
-    model: RESEARCH_MODEL,
-    max_tokens: 8000,
-    system: SYSTEM,
-    output_config: { effort: 'low', format: zodOutputFormat(ResearchOutput) },
-    messages: [{ role: 'user', content: userPrompt(i, usable) }],
-  })
-  cost += res.usage.input_tokens * PRICE.input + res.usage.output_tokens * PRICE.output
-  if (!res.parsed_output) throw new Error(`research: no structured output (stop: ${res.stop_reason})`)
-  return toRecord(res.parsed_output as ToolOut, usable, i.company, cost)
+/** The owner's own link ("use this link"): read it and write a candidate from it (about $0.04). Undated links are fine. */
+export async function researchUrl(client: Anthropic, i: ResearchInput, url: string): Promise<{ candidate: HookCandidate | null; problems: string[]; cost: number }> {
+  const d = await exa('/contents', { urls: [url], text: { maxCharacters: 4000 }, highlights: { query: highlightQuery(i.roleTitle), numSentences: 3, highlightsPerUrl: 4 } })
+  let cost = Number(d.costDollars?.total ?? 0)
+  const item = (d.results ?? []).map((r) => toItem(r, 'your link'))[0]
+  if (!item || item.text.length + item.highlights.join(' ').length < 200) return { candidate: null, problems: ['Could not read that page.'], cost }
+  item.text = item.text.slice(0, 1800)
+  const { out, cost: cc } = await ask(client, userPrompt(i, [], [item]))
+  cost += cc
+  const { kept, rejected } = toCandidates(out, [item], i.company, true)
+  return { candidate: kept[0] ?? null, problems: kept.length ? [] : rejected.length ? rejected : [out.none_reason ?? 'No specific idea found on that page.'], cost }
 }

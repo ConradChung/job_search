@@ -66,6 +66,23 @@ export interface CompanyResearchView {
   hook_reviewed_at: string | null
   why_no_hook: string | null
   researched_at: string
+  hook_candidates: HookCandidateView[]
+  chosen_index: number | null
+  custom_url: string | null
+}
+
+export interface HookCandidateView {
+  url: string
+  title: string
+  date: string | null
+  kind: string
+  speaker: string | null
+  speaker_title: string | null
+  idea: string
+  evidence: string
+  role_clause: string
+  hook_sentence: string
+  hook_short: string
 }
 
 export interface CompanyView {
